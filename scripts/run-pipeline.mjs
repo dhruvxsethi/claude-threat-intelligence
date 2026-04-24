@@ -189,7 +189,7 @@ async function processVulnerabilityApis(db, correlator) {
     for (const cve of nvdResult.cves) {
       cve.in_kev = kevIds.has(cve.cve_id);
       const analysis = await analyzeNvdCve(cve, kevIds);
-      if (!analysis.success) continue;
+      if (!analysis.success) { err(`NVD analysis failed (${cve.cve_id}): ${analysis.error}`); continue; }
       const threat = normalizeCveThreat(analysis.data, cve, analysis.source_url);
       await saveThreat(db, threat);
       correlator.correlate(threat.id);
@@ -208,7 +208,7 @@ async function processVulnerabilityApis(db, correlator) {
         continue;
       }
       const analysis = await analyzeCisaKevEntry(vuln);
-      if (!analysis.success) continue;
+      if (!analysis.success) { err(`KEV analysis failed (${vuln.cveID}): ${analysis.error}`); continue; }
       const cve = {
         cve_id: vuln.cveID, cvss_score: null, cvss_vector: null,
         cvss_severity: null, description: vuln.shortDescription,
@@ -238,6 +238,12 @@ async function run() {
   log(`  CLAUDE THREAT INTELLIGENCE — RUN ${runId}`, 'bold');
   log(`  Time: ${new Date().toUTCString()}`, 'cyan');
   log(`${'═'.repeat(60)}\n`, 'blue');
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    err('ANTHROPIC_API_KEY is not set in .env — Claude analysis will fail for all articles.');
+    err('Add your key to .env: ANTHROPIC_API_KEY=sk-ant-...');
+    db.close(); return;
+  }
 
   const dedup = new Deduplicator(db);
   const correlator = new Correlator(db);
