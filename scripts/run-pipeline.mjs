@@ -8,6 +8,17 @@
 
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync, readFileSync } from 'fs';
+
+// Load .env manually (no dotenv dependency needed in Node 20+)
+const __envDir = dirname(fileURLToPath(import.meta.url));
+const envPath = join(__envDir, '..', '.env');
+if (existsSync(envPath)) {
+  readFileSync(envPath, 'utf8').split('\n').forEach(line => {
+    const [k, ...v] = line.split('=');
+    if (k?.trim() && !process.env[k.trim()]) process.env[k.trim()] = v.join('=').trim();
+  });
+}
 import { v4 as uuidv4 } from 'uuid';
 import chalk from 'chalk';
 import { getDb, migrate } from './migrate.mjs';

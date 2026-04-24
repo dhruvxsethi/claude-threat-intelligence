@@ -1,11 +1,21 @@
 import express from 'express';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { getDb, migrate } from '../scripts/migrate.mjs';
 import { loadSettings } from '../ingestion/feed-fetcher.mjs';
 import cron from 'node-cron';
 import { spawn } from 'child_process';
+
+// Load .env
+const __envRoot = dirname(fileURLToPath(import.meta.url));
+const _envPath = join(__envRoot, '..', '.env');
+if (existsSync(_envPath)) {
+  readFileSync(_envPath, 'utf8').split('\n').forEach(line => {
+    const [k, ...v] = line.split('=');
+    if (k?.trim() && !process.env[k.trim()]) process.env[k.trim()] = v.join('=').trim();
+  });
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
