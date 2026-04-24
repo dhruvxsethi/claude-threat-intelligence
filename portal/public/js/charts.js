@@ -1,87 +1,67 @@
-// Chart rendering
-
-Chart.defaults.color = '#64748b';
-Chart.defaults.borderColor = '#1e2d4a';
+Chart.defaults.color = '#5a6a8a';
+Chart.defaults.borderColor = '#1a2540';
 Chart.defaults.font.family = "'Inter', sans-serif";
 Chart.defaults.font.size = 11;
 
-let timelineChart, typesChart;
+let _tl, _ty;
 
-function renderCharts(data) {
-  renderTimelineChart(data.by_day || []);
-  renderTypesChart(data.by_type || []);
+function renderCharts(d) {
+  renderTimeline(d.by_day||[]);
+  renderTypes(d.by_type||[]);
 }
 
-function renderTimelineChart(byDay) {
+function renderTimeline(data) {
   const ctx = document.getElementById('chart-timeline')?.getContext('2d');
   if (!ctx) return;
-
-  const labels = byDay.map(d => {
-    const date = new Date(d.day);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  });
-  const values = byDay.map(d => d.cnt);
-
-  if (timelineChart) timelineChart.destroy();
-
-  timelineChart = new Chart(ctx, {
+  if (_tl) _tl.destroy();
+  _tl = new Chart(ctx, {
     type: 'line',
     data: {
-      labels,
+      labels: data.map(d => new Date(d.day).toLocaleDateString('en-US',{month:'short',day:'numeric'})),
       datasets: [{
-        label: 'Threats',
-        data: values,
-        borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59,130,246,0.08)',
+        data: data.map(d=>d.cnt),
+        borderColor: '#3d7aff',
+        backgroundColor: 'rgba(61,122,255,.06)',
         borderWidth: 2,
-        pointBackgroundColor: '#3b82f6',
+        pointBackgroundColor: '#3d7aff',
         pointRadius: 3,
         fill: true,
-        tension: 0.3,
+        tension: 0.4,
       }],
     },
     options: {
       responsive: true,
       plugins: { legend: { display: false } },
       scales: {
-        x: { grid: { color: '#1e2d4a' }, ticks: { color: '#64748b' } },
-        y: { grid: { color: '#1e2d4a' }, ticks: { color: '#64748b', precision: 0 }, beginAtZero: true },
+        x: { grid: { color: '#1a2540' }, ticks: { color: '#5a6a8a' } },
+        y: { grid: { color: '#1a2540' }, ticks: { color: '#5a6a8a', precision: 0 }, beginAtZero: true },
       },
     },
   });
 }
 
-function renderTypesChart(byType) {
+function renderTypes(data) {
   const ctx = document.getElementById('chart-types')?.getContext('2d');
   if (!ctx) return;
-
-  const COLORS = [
-    '#ef4444','#f97316','#eab308','#22c55e','#3b82f6',
-    '#6366f1','#8b5cf6','#06b6d4','#10b981','#f43f5e',
-  ];
-
-  if (typesChart) typesChart.destroy();
-
-  typesChart = new Chart(ctx, {
+  if (_ty) _ty.destroy();
+  const COLORS = ['#ff4560','#ff8c42','#ffd166','#06d6a0','#3d7aff','#9b59ff','#06b6d4','#f59e0b','#84cc16','#f43f5e'];
+  _ty = new Chart(ctx, {
     type: 'doughnut',
     data: {
-      labels: byType.map(t => threatTypeLabel(t.threat_type)),
+      labels: data.map(d=>typeLabel(d.threat_type)),
       datasets: [{
-        data: byType.map(t => t.cnt),
-        backgroundColor: COLORS.slice(0, byType.length).map(c => c + '99'),
-        borderColor: COLORS.slice(0, byType.length),
-        borderWidth: 1,
+        data: data.map(d=>d.cnt),
+        backgroundColor: COLORS.slice(0,data.length).map(c=>c+'33'),
+        borderColor: COLORS.slice(0,data.length),
+        borderWidth: 1.5,
       }],
     },
     options: {
       responsive: true,
       plugins: {
-        legend: {
-          position: 'right',
-          labels: { color: '#94a3b8', padding: 12, font: { size: 11 } },
-        },
+        legend: { position:'right', labels: { color:'#a8b4d0', padding:10, font:{size:11} } },
       },
-      cutout: '65%',
+      cutout: '68%',
     },
   });
 }
