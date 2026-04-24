@@ -10,9 +10,11 @@
   <nav class="sidebar">
     <div class="logo">
       <div class="logo-icon">🛡</div>
-      <div class="logo-name">Threat Intelligence</div>
-      <div class="logo-sub">Powered by Claude AI</div>
-      <div class="live-pill"><span class="live-dot"></span> Live</div>
+      <div class="logo-text">
+        <div class="logo-name">CTI Platform</div>
+        <div class="logo-sub">by Claude AI</div>
+      </div>
+      <div class="live-pill"><span class="live-dot"></span>Live</div>
     </div>
     <div class="nav">
       <div class="nav-label">Intelligence</div>
@@ -20,8 +22,15 @@
       <a class="nav-item active" href="/threats.html"><span class="nav-icon">🛡</span>Threat Feed</a>
       <a class="nav-item" href="/sectors.html"><span class="nav-icon">🏢</span>Sectors</a>
       <a class="nav-item" href="/iocs.html"><span class="nav-icon">🔍</span>IOC Explorer</a>
-      <div class="nav-label" style="margin-top:8px">System</div>
+      <div class="nav-label" style="margin-top:6px">System</div>
       <a class="nav-item" href="/feeds.html"><span class="nav-icon">📡</span>Feed Health</a>
+    </div>
+    <div class="sidebar-footer">
+      <button class="btn btn-ghost btn-sm" onclick="triggerPipeline()" style="width:100%;margin-bottom:10px;justify-content:center">↻ Sync Now</button>
+      <div class="meta-row">
+        <span class="text-xs text-3">Schedule</span>
+        <span class="text-xs text-2">Every 3 hours</span>
+      </div>
     </div>
   </nav>
   <div class="main">
@@ -29,19 +38,17 @@
       <div class="page-title">Threat Feed</div>
       <div class="search-wrap">
         <span style="color:var(--text-3)">⌕</span>
-        <input type="text" id="global-search" placeholder="Search…" oninput="filterThreats(this.value)">
+        <input type="text" id="global-search" placeholder="Filter threats…" oninput="filterThreats(this.value)">
       </div>
-      <div class="clock" id="utc-clock">00:00:00 UTC</div>
-      <button class="btn btn-primary" onclick="triggerPipeline()">▶ Run Now</button>
     </div>
     <div class="content">
       <div class="filters">
         <select class="filter-select" id="f-severity" onchange="applyFilters()">
           <option value="">All Severities</option>
-          <option value="critical">🔴 Critical</option>
-          <option value="high">🟠 High</option>
-          <option value="medium">🟡 Medium</option>
-          <option value="low">🟢 Low</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
         </select>
         <select class="filter-select" id="f-sector" onchange="applyFilters()">
           <option value="">All Sectors</option>

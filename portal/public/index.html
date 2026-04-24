@@ -10,13 +10,14 @@
 <body>
 <div class="app">
 
-  <!-- Sidebar -->
   <nav class="sidebar">
     <div class="logo">
       <div class="logo-icon">🛡</div>
-      <div class="logo-name">Threat Intelligence</div>
-      <div class="logo-sub">Powered by Claude AI</div>
-      <div class="live-pill"><span class="live-dot"></span> Live</div>
+      <div class="logo-text">
+        <div class="logo-name">CTI Platform</div>
+        <div class="logo-sub">by Claude AI</div>
+      </div>
+      <div class="live-pill"><span class="live-dot"></span>Live</div>
     </div>
     <div class="nav">
       <div class="nav-label">Intelligence</div>
@@ -24,18 +25,18 @@
       <a class="nav-item" href="/threats.html"><span class="nav-icon">🛡</span>Threat Feed</a>
       <a class="nav-item" href="/sectors.html"><span class="nav-icon">🏢</span>Sectors</a>
       <a class="nav-item" href="/iocs.html"><span class="nav-icon">🔍</span>IOC Explorer</a>
-      <div class="nav-label" style="margin-top:8px">System</div>
+      <div class="nav-label" style="margin-top:6px">System</div>
       <a class="nav-item" href="/feeds.html"><span class="nav-icon">📡</span>Feed Health</a>
     </div>
     <div class="sidebar-footer">
-      <div class="label">Last pipeline run</div>
-      <div class="value" id="last-run">—</div>
-      <div class="label" style="margin-top:6px">Next scheduled</div>
-      <div class="value" id="next-run">Every 3 hours</div>
+      <button class="btn btn-ghost btn-sm" onclick="triggerPipeline()" style="width:100%;margin-bottom:10px;justify-content:center">↻ Sync Now</button>
+      <div class="meta-row">
+        <span class="text-xs text-3">Schedule</span>
+        <span class="text-xs text-2">Every 3 hours</span>
+      </div>
     </div>
   </nav>
 
-  <!-- Main -->
   <div class="main">
     <div class="topbar">
       <div class="page-title">Dashboard</div>
@@ -43,75 +44,49 @@
         <span style="color:var(--text-3);font-size:.9rem">⌕</span>
         <input type="text" id="global-search" placeholder="Search threats, CVEs, IOCs…" oninput="globalSearch(this.value)">
       </div>
-      <div class="clock" id="utc-clock">00:00:00 UTC</div>
-      <button class="btn btn-primary" onclick="triggerPipeline()">▶ Run Now</button>
     </div>
 
     <div class="content">
 
-      <!-- Stats -->
-      <div class="stats-grid mb-6">
-        <div class="stat-card c-critical">
-          <div class="glow"></div>
-          <div class="stat-icon">🔴</div>
-          <div class="stat-value" id="s-critical">0</div>
-          <div class="stat-label">Critical</div>
-          <div class="stat-sub">Last 7 days</div>
+      <!-- Metrics strip -->
+      <div class="metrics-bar">
+        <div class="metric">
+          <div class="metric-val c-critical" id="s-critical">—</div>
+          <div class="metric-lbl">Critical</div>
         </div>
-        <div class="stat-card c-high">
-          <div class="glow"></div>
-          <div class="stat-icon">🟠</div>
-          <div class="stat-value" id="s-high">0</div>
-          <div class="stat-label">High</div>
-          <div class="stat-sub">Last 7 days</div>
+        <div class="metric">
+          <div class="metric-val c-high" id="s-high">—</div>
+          <div class="metric-lbl">High</div>
         </div>
-        <div class="stat-card c-blue">
-          <div class="glow"></div>
-          <div class="stat-icon">📋</div>
-          <div class="stat-value" id="s-cves">0</div>
-          <div class="stat-label">CVEs</div>
-          <div class="stat-sub" id="s-kev">0 in CISA KEV</div>
+        <div class="metric">
+          <div class="metric-val c-medium" id="s-medium">—</div>
+          <div class="metric-lbl">Medium</div>
         </div>
-        <div class="stat-card c-purple">
-          <div class="glow"></div>
-          <div class="stat-icon">🔖</div>
-          <div class="stat-value" id="s-iocs">0</div>
-          <div class="stat-label">IOCs</div>
-          <div class="stat-sub">Indicators extracted</div>
+        <div class="metric">
+          <div class="metric-val" id="s-today">—</div>
+          <div class="metric-lbl">Today</div>
         </div>
-        <div class="stat-card c-low">
-          <div class="glow"></div>
-          <div class="stat-icon">🟢</div>
-          <div class="stat-value" id="s-today">0</div>
-          <div class="stat-label">Today</div>
-          <div class="stat-sub">Threats ingested</div>
+        <div class="metric">
+          <div class="metric-val c-blue" id="s-cves">—</div>
+          <div class="metric-lbl">CVEs</div>
+          <div class="metric-sub" id="s-kev"></div>
         </div>
-        <div class="stat-card c-medium">
-          <div class="glow"></div>
-          <div class="stat-icon">🟡</div>
-          <div class="stat-value" id="s-medium">0</div>
-          <div class="stat-label">Medium</div>
-          <div class="stat-sub">Last 7 days</div>
+        <div class="metric">
+          <div class="metric-val" id="s-iocs">—</div>
+          <div class="metric-lbl">IOCs</div>
         </div>
-        <div class="stat-card c-blue">
-          <div class="glow"></div>
-          <div class="stat-icon">📡</div>
-          <div class="stat-value" id="s-feeds">0</div>
-          <div class="stat-label">Live Feeds</div>
-          <div class="stat-sub">Healthy sources</div>
+        <div class="metric">
+          <div class="metric-val c-low" id="s-feeds">—</div>
+          <div class="metric-lbl">Feeds Active</div>
         </div>
-        <div class="stat-card c-low">
-          <div class="glow"></div>
-          <div class="stat-icon">🔗</div>
-          <div class="stat-value" id="s-total">0</div>
-          <div class="stat-label">Total</div>
-          <div class="stat-sub">7-day threats</div>
+        <div class="metric">
+          <div class="metric-val" id="s-total">—</div>
+          <div class="metric-lbl">7d Total</div>
         </div>
       </div>
 
-      <!-- Sectors -->
-      <div class="section-head"><div class="section-title">Sector Exposure — 7 days</div></div>
-      <div class="sector-strip mb-6">
+      <!-- Sector exposure -->
+      <div class="sector-strip mb-5">
         <div class="sector-box banking">
           <div class="sector-emoji">🏦</div>
           <div>
@@ -135,23 +110,37 @@
         </div>
       </div>
 
-      <!-- Charts -->
-      <div class="charts-grid mb-6">
-        <div class="card">
-          <div class="card-head"><div class="card-title">Threats Over Time</div></div>
-          <canvas id="chart-timeline" style="max-height:200px"></canvas>
-        </div>
-        <div class="card">
-          <div class="card-head"><div class="card-title">By Type</div></div>
-          <canvas id="chart-types" style="max-height:200px"></canvas>
+      <!-- Latest threats -->
+      <div class="section-head mb-3">
+        <div class="section-title">Latest Threats</div>
+        <a class="text-xs" href="/threats.html" style="color:var(--blue)">View all →</a>
+      </div>
+      <div class="card mb-5">
+        <div id="latest-threats">
+          <div class="empty">
+            <div class="empty-icon">🛡</div>
+            <div class="empty-title">No threats yet</div>
+            <div class="empty-sub">Click <strong>Sync Now</strong> in the sidebar to fetch your first batch.</div>
+          </div>
         </div>
       </div>
 
-      <!-- Bottom Grid -->
-      <div class="bottom-grid mb-6">
+      <!-- Charts + CVEs/Actors -->
+      <div class="charts-grid mb-5">
+        <div class="card">
+          <div class="card-head"><div class="card-title">Threat Activity — 7 days</div></div>
+          <canvas id="chart-timeline" style="max-height:180px"></canvas>
+        </div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">By Type</div></div>
+          <canvas id="chart-types" style="max-height:180px"></canvas>
+        </div>
+      </div>
+
+      <div class="bottom-grid">
         <div class="card">
           <div class="card-head">
-            <div class="card-title">🔴 Critical CVEs</div>
+            <div class="card-title">Critical CVEs</div>
             <a class="card-link" href="/iocs.html">All IOCs →</a>
           </div>
           <div id="critical-cves">
@@ -159,24 +148,9 @@
           </div>
         </div>
         <div class="card">
-          <div class="card-head"><div class="card-title">👤 Active Threat Actors</div></div>
+          <div class="card-head"><div class="card-title">Active Threat Actors</div></div>
           <div id="top-actors">
             <div class="empty"><div class="empty-icon">👤</div><div class="empty-title">No actors yet</div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Latest Threats -->
-      <div class="card">
-        <div class="card-head">
-          <div class="card-title">Latest Threats</div>
-          <a class="card-link" href="/threats.html">View all →</a>
-        </div>
-        <div id="latest-threats">
-          <div class="empty">
-            <div class="empty-icon">🛡</div>
-            <div class="empty-title">No threats ingested yet</div>
-            <div class="empty-sub">Click <strong>Run Now</strong> to fetch your first batch of intelligence.</div>
           </div>
         </div>
       </div>
@@ -185,7 +159,6 @@
   </div>
 </div>
 
-<!-- Search overlay -->
 <div id="search-overlay" class="search-overlay hidden">
   <div id="search-results"></div>
 </div>

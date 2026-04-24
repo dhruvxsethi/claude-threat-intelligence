@@ -282,16 +282,11 @@ app.get('/api/feeds', (req, res) => {
 // ─── Trigger pipeline run manually ────────────────────────────────────────
 
 app.post('/api/pipeline/run', (req, res) => {
-  const { slot } = req.body;
-  const args = ['scripts/run-pipeline.mjs'];
-  if (slot === 'A') args.push('--slot-a');
-  if (slot === 'B') args.push('--slot-b');
-
-  const child = spawn('node', args, { cwd: ROOT, detached: true, stdio: 'ignore' });
+  const child = spawn('node', ['scripts/run-pipeline.mjs'], { cwd: ROOT, detached: true, stdio: 'ignore' });
   child.unref();
 
-  broadcastSse('pipeline_started', { slot: slot || 'auto', runId: Date.now() });
-  res.json({ status: 'started', slot: slot || 'auto' });
+  broadcastSse('pipeline_started', { runId: Date.now() });
+  res.json({ status: 'started' });
 });
 
 // ─── Sectors API ──────────────────────────────────────────────────────────
@@ -391,23 +386,15 @@ function parseThreat(t) {
 // ─── Built-in cron (runs alongside portal) ────────────────────────────────
 
 function schedulePipeline() {
-  // Slot A: 0,6,12,18 UTC
-  cron.schedule('0 0,6,12,18 * * *', () => {
-    console.log('[CRON] Slot A pipeline starting...');
-    const child = spawn('node', ['scripts/run-pipeline.mjs', '--slot-a'], { cwd: ROOT, detached: true, stdio: 'ignore' });
+  // Full scan every 3 hours — all feeds + vulnerability APIs
+  cron.schedule('0 */3 * * *', () => {
+    console.log('[CRON] Starting full threat intelligence scan...');
+    const child = spawn('node', ['scripts/run-pipeline.mjs'], { cwd: ROOT, detached: true, stdio: 'ignore' });
     child.unref();
-    broadcastSse('pipeline_started', { slot: 'A', time: new Date().toISOString() });
+    broadcastSse('pipeline_started', { time: new Date().toISOString() });
   }, { timezone: 'UTC' });
 
-  // Slot B: 3,9,15,21 UTC
-  cron.schedule('0 3,9,15,21 * * *', () => {
-    console.log('[CRON] Slot B pipeline starting...');
-    const child = spawn('node', ['scripts/run-pipeline.mjs', '--slot-b'], { cwd: ROOT, detached: true, stdio: 'ignore' });
-    child.unref();
-    broadcastSse('pipeline_started', { slot: 'B', time: new Date().toISOString() });
-  }, { timezone: 'UTC' });
-
-  console.log('✓ Pipeline scheduled: Slot A at 0,6,12,18 UTC | Slot B at 3,9,15,21 UTC');
+  console.log('✓ Pipeline scheduled: full scan every 3 hours');
 }
 
 // ─── Start ────────────────────────────────────────────────────────────────

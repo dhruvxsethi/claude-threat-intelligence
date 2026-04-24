@@ -15,7 +15,7 @@ feeds:
     tier: 1
     rotation_slot: A
     sectors: [government, banking, healthcare]
-    enabled: true
+    enabled: false  # URL returns 404 — covered by CISA KEV JSON API below
     source_credibility: 100
 
   - id: cisa_kev_api

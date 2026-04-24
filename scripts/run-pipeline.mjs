@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 /**
  * Main ingestion pipeline runner.
- * Runs on a 3-hour rotation:
- *   Slot A (0,6,12,18 UTC): Vulnerability APIs + quick news scan
- *   Slot B (3,9,15,21 UTC): Deep news/blog feeds + threat actor intel
+ * Fetches ALL feeds and vulnerability APIs every run — no slot rotation.
+ * Streams results to the portal via SSE as each threat is analyzed.
  */
 
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync } from 'fs';
 
-// Load .env manually (no dotenv dependency needed in Node 20+)
+// Load .env manually
 const __envDir = dirname(fileURLToPath(import.meta.url));
 const envPath = join(__envDir, '..', '.env');
 if (existsSync(envPath)) {
@@ -19,10 +18,11 @@ if (existsSync(envPath)) {
     if (k?.trim() && !process.env[k.trim()]) process.env[k.trim()] = v.join('=').trim();
   });
 }
+
 import { v4 as uuidv4 } from 'uuid';
 import chalk from 'chalk';
 import { getDb, migrate } from './migrate.mjs';
-import { runAllFeeds, getCurrentSlot, fetchNvdCves, fetchCisaKev, fetchGithubAdvisories, loadSettings } from '../ingestion/feed-fetcher.mjs';
+import { runAllFeeds, fetchNvdCves, fetchCisaKev, fetchGithubAdvisories, loadSettings } from '../ingestion/feed-fetcher.mjs';
 import { scrapeArticle } from '../ingestion/article-scraper.mjs';
 import { Deduplicator } from '../ingestion/dedup.mjs';
 import { analyzeArticle, analyzeNvdCve, analyzeCisaKevEntry } from '../intelligence/analyzer.mjs';
@@ -32,13 +32,13 @@ import { Correlator } from '../intelligence/correlator.mjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 
-const log = (msg, color = 'white') => console.log(chalk[color](msg));
-const ok = msg => log(`  ✓ ${msg}`, 'green');
+const log  = (msg, color = 'white') => console.log(chalk[color](msg));
+const ok   = msg => log(`  ✓ ${msg}`, 'green');
 const warn = msg => log(`  ⚠ ${msg}`, 'yellow');
-const err = msg => log(`  ✗ ${msg}`, 'red');
+const err  = msg => log(`  ✗ ${msg}`, 'red');
 const info = msg => log(`  → ${msg}`, 'cyan');
 
-async function saveTheat(db, threat) {
+async function saveThreat(db, threat) {
   const insert = db.prepare(`
     INSERT OR IGNORE INTO threats (
       id, title, summary, severity, threat_type, kill_chain_stage,
@@ -88,19 +88,18 @@ async function saveTheat(db, threat) {
   `);
 
   const saveAll = db.transaction(() => {
-    // Extract relational data before inserting
     const { _cves, _iocs, _ttps, _actors, ...threatRecord } = threat;
     insert.run(threatRecord);
-    (_cves || []).forEach(c => { try { insertCve.run(c); } catch {} });
-    (_iocs || []).forEach(i => { try { insertIoc.run(i); } catch {} });
-    (_ttps || []).forEach(t => { try { insertTtp.run(t); } catch {} });
+    (_cves   || []).forEach(c => { try { insertCve.run(c);   } catch {} });
+    (_iocs   || []).forEach(i => { try { insertIoc.run(i);   } catch {} });
+    (_ttps   || []).forEach(t => { try { insertTtp.run(t);   } catch {} });
     (_actors || []).forEach(a => { try { insertActor.run(a); } catch {} });
   });
 
   saveAll();
 }
 
-async function processArticles(db, items, dedup, correlator, settings, runId) {
+async function processArticles(db, items, dedup, correlator, settings) {
   const maxAnalyze = settings.claude.max_articles_per_run;
   const newItems = dedup.filterNewItems(items);
   let analyzed = 0, threats = 0, errors = 0;
@@ -114,28 +113,17 @@ async function processArticles(db, items, dedup, correlator, settings, runId) {
     }
 
     try {
-      // Fetch full article
       const scraped = await scrapeArticle(item.url);
-      if (!scraped.success) {
-        dedup.markSkipped(item.url, scraped.error);
-        continue;
-      }
+      if (!scraped.success) { dedup.markSkipped(item.url, scraped.error); continue; }
+      if (scraped.content_length < 500) { dedup.markSkipped(item.url, 'content_too_short'); continue; }
 
-      if (scraped.content_length < 500) {
-        dedup.markSkipped(item.url, 'content_too_short');
-        continue;
-      }
-
-      // Register article
       dedup.registerArticle(item.url, item.feed_id, item.title, item.published_at, scraped.content_hash);
 
-      // Check for duplicate content
       if (!dedup.isNewContent(scraped.content_hash)) {
         dedup.markSkipped(item.url, 'duplicate_content');
         continue;
       }
 
-      // Analyze with Claude
       const articleForAnalysis = {
         url: item.url,
         title: item.title || scraped.title,
@@ -158,25 +146,21 @@ async function processArticles(db, items, dedup, correlator, settings, runId) {
         continue;
       }
 
-      // Normalize and save
       const threat = normalizeArticleThreat(analysis.data, articleForAnalysis, {
         name: item.feed_name,
         source_tier: item.source_tier,
         source_credibility: item.source_credibility,
-        rotation_slot: item.rotation_slot || 'B',
+        rotation_slot: 'ALL',
       });
 
-      await saveTheat(db, threat);
+      await saveThreat(db, threat);
       dedup.markAnalyzed(item.url, threat.id);
-
-      // Correlate with existing threats
       correlator.correlate(threat.id);
       correlator.updateIocIndex(threat._iocs || [], threat.id);
 
       threats++;
       ok(`[${threat.severity?.toUpperCase()}] ${threat.title.slice(0, 80)}`);
 
-      // Rate limiting between Claude calls
       await new Promise(r => setTimeout(r, 500));
 
     } catch (e) {
@@ -198,11 +182,8 @@ async function processVulnerabilityApis(db, correlator) {
   ]);
 
   let threatsCreated = 0;
-
-  // Build KEV set for cross-reference
   const kevIds = new Set((kevResult.vulnerabilities || []).map(v => v.cveID));
 
-  // Process NVD CVEs
   if (nvdResult.success) {
     info(`NVD: ${nvdResult.cves.length} new CVEs`);
     for (const cve of nvdResult.cves) {
@@ -210,7 +191,7 @@ async function processVulnerabilityApis(db, correlator) {
       const analysis = await analyzeNvdCve(cve, kevIds);
       if (!analysis.success) continue;
       const threat = normalizeCveThreat(analysis.data, cve, analysis.source_url);
-      await saveTheat(db, threat);
+      await saveThreat(db, threat);
       correlator.correlate(threat.id);
       threatsCreated++;
       ok(`NVD: ${cve.cve_id} (CVSS ${cve.cvss_score || 'N/A'})`);
@@ -218,14 +199,11 @@ async function processVulnerabilityApis(db, correlator) {
     }
   }
 
-  // Process new CISA KEV entries (highest priority)
   if (kevResult.success && kevResult.vulnerabilities.length > 0) {
     info(`CISA KEV: ${kevResult.vulnerabilities.length} new entries`);
     for (const vuln of kevResult.vulnerabilities) {
-      // Check if already processed as NVD CVE
       const existing = db.prepare('SELECT id FROM threat_cves WHERE cve_id = ?').get(vuln.cveID);
       if (existing) {
-        // Mark it as in KEV
         db.prepare('UPDATE threat_cves SET in_kev = 1, exploited_in_wild = 1 WHERE cve_id = ?').run(vuln.cveID);
         continue;
       }
@@ -237,8 +215,8 @@ async function processVulnerabilityApis(db, correlator) {
         published_date: vuln.dateAdded, in_kev: true, exploited_in_wild: true,
       };
       const threat = normalizeCveThreat(analysis.data, cve, analysis.source_url);
-      threat.credibility_score = 95; // CISA KEV = very high credibility
-      await saveTheat(db, threat);
+      threat.credibility_score = 95;
+      await saveThreat(db, threat);
       correlator.correlate(threat.id);
       threatsCreated++;
       ok(`KEV: ${vuln.cveID} — ${vuln.vulnerabilityName}`);
@@ -249,17 +227,16 @@ async function processVulnerabilityApis(db, correlator) {
   return threatsCreated;
 }
 
-async function run(forcedSlot = null) {
+async function run() {
   const runId = uuidv4().slice(0, 8);
   const db = getDb(join(ROOT, 'data/threats.db'));
   migrate(db);
 
   const settings = loadSettings();
-  const slot = forcedSlot || getCurrentSlot(settings);
 
   log(`\n${'═'.repeat(60)}`, 'blue');
   log(`  CLAUDE THREAT INTELLIGENCE — RUN ${runId}`, 'bold');
-  log(`  Slot: ${slot} | Time: ${new Date().toUTCString()}`, 'cyan');
+  log(`  Time: ${new Date().toUTCString()}`, 'cyan');
   log(`${'═'.repeat(60)}\n`, 'blue');
 
   const dedup = new Deduplicator(db);
@@ -268,32 +245,29 @@ async function run(forcedSlot = null) {
   let totalArticles = 0, totalThreats = 0;
 
   try {
-    // Slot A: Vulnerability APIs
-    if (slot === 'A') {
-      const vuln = await processVulnerabilityApis(db, correlator);
-      totalThreats += vuln;
-    }
+    // Always fetch vulnerability APIs
+    const vuln = await processVulnerabilityApis(db, correlator);
+    totalThreats += vuln;
 
-    // Both slots: RSS/blog feeds
-    const { rssResults } = await runAllFeeds(slot, db, info);
+    // Always fetch all RSS feeds
+    const { rssResults } = await runAllFeeds(db, info);
     const allItems = rssResults.flatMap(r =>
       r.items.map(item => ({
         ...item,
         source_tier: r.feed?.tier,
         source_credibility: r.feed?.source_credibility,
-        rotation_slot: r.feed?.rotation_slot,
       }))
     );
     totalArticles = allItems.length;
 
-    const { analyzed, threats, errors } = await processArticles(db, allItems, dedup, correlator, settings, runId);
+    const { analyzed, threats, errors } = await processArticles(db, allItems, dedup, correlator, settings);
     totalThreats += threats;
 
     log(`\n${'─'.repeat(60)}`, 'blue');
     log(`  Run ${runId} complete`, 'green');
-    log(`  Articles fetched: ${totalArticles}`, 'white');
+    log(`  Articles fetched:  ${totalArticles}`, 'white');
     log(`  Articles analyzed: ${analyzed}`, 'white');
-    log(`  Threats created: ${totalThreats}`, 'white');
+    log(`  Threats created:   ${totalThreats}`, 'white');
     if (errors > 0) log(`  Errors: ${errors}`, 'yellow');
     log(`${'─'.repeat(60)}\n`, 'blue');
 
@@ -305,9 +279,4 @@ async function run(forcedSlot = null) {
   }
 }
 
-// Parse CLI args
-const args = process.argv.slice(2);
-const slotArg = args.find(a => a === '--slot-a' || a === '--slot-b');
-const forcedSlot = slotArg === '--slot-a' ? 'A' : slotArg === '--slot-b' ? 'B' : null;
-
-run(forcedSlot);
+run();

@@ -1,12 +1,3 @@
-// UTC clock
-function updateClock() {
-  const t = new Date().toUTCString().split(' ')[4];
-  const el = document.getElementById('utc-clock');
-  if (el) el.textContent = `${t} UTC`;
-}
-setInterval(updateClock, 1000);
-updateClock();
-
 // Toast
 function toast(msg, type = 'info') {
   const wrap = document.getElementById('toasts');
@@ -25,7 +16,7 @@ function copyToClipboard(text) {
 
 // Severity badge
 function sevBadge(sev) {
-  const map = { critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🟢 Low', unknown: '⚪ Unknown' };
+  const map = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', unknown: 'Unknown' };
   return `<span class="badge badge-${sev || 'unknown'}">${map[sev] || sev || 'Unknown'}</span>`;
 }
 
@@ -68,11 +59,11 @@ function credBar(score) {
 
 // IOC type colors
 const IOC_COLORS = {
-  ip:'#ff4560', ipv6:'#ff4560', domain:'#ff8c42', subdomain:'#ffaa70',
-  url:'#ffd166', email:'#06d6a0', hash_md5:'#3d7aff', hash_sha1:'#6b5bff',
-  hash_sha256:'#9b59ff', hash_sha512:'#c084ff', file_name:'#06b6d4',
+  ip:'#f85149', ipv6:'#f85149', domain:'#e3b341', subdomain:'#d29922',
+  url:'#d29922', email:'#3fb950', hash_md5:'#58a6ff', hash_sha1:'#8b74ff',
+  hash_sha256:'#bc8cff', hash_sha512:'#d3b5ff', file_name:'#22d3ee',
   file_path:'#0ea5e9', registry_key:'#64748b', mutex:'#94a3b8',
-  user_agent:'#f59e0b', asn:'#84cc16', bitcoin_address:'#ff8c42', yara_rule:'#10b981',
+  user_agent:'#f59e0b', asn:'#84cc16', bitcoin_address:'#e3b341', yara_rule:'#3fb950',
 };
 
 function iocPill(type) {
@@ -82,10 +73,12 @@ function iocPill(type) {
 
 // Threat type label
 function typeLabel(t) {
-  const m = { ransomware:'Ransomware', apt:'APT', phishing:'Phishing', vulnerability:'Vulnerability',
+  const m = {
+    ransomware:'Ransomware', apt:'APT', phishing:'Phishing', vulnerability:'Vulnerability',
     data_breach:'Data Breach', supply_chain:'Supply Chain', zero_day:'Zero Day', ddos:'DDoS',
     cryptojacking:'Cryptojacking', malware:'Malware', fraud:'Fraud', espionage:'Espionage',
-    insider_threat:'Insider', other:'Other' };
+    insider_threat:'Insider', other:'Other',
+  };
   return m[t] || t || '—';
 }
 
@@ -94,21 +87,28 @@ function esc(s) {
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// Trigger pipeline
-async function triggerPipeline(slot) {
+// Trigger pipeline sync
+async function triggerPipeline() {
   try {
-    const r = await fetch('/api/pipeline/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({slot}) });
+    const r = await fetch('/api/pipeline/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
     const d = await r.json();
-    toast(`Pipeline started (slot ${d.slot}) — data will appear automatically`, 'success');
-  } catch { toast('Failed to start pipeline', 'warning'); }
+    toast('Sync started — new threats will appear automatically', 'success');
+  } catch { toast('Failed to start sync', 'warning'); }
 }
 
 // SSE
 function connectSse(onStart, onDone) {
   try {
     const es = new EventSource('/api/events');
-    es.addEventListener('pipeline_started', e => { toast('Pipeline running…', 'info'); if (onStart) onStart(JSON.parse(e.data)); });
-    es.addEventListener('pipeline_done', e => { const d = JSON.parse(e.data); toast(`Done — ${d.threats_created||0} new threats`, 'success'); if (onDone) onDone(d); });
+    es.addEventListener('pipeline_started', e => {
+      toast('Syncing feeds…', 'info');
+      if (onStart) onStart(JSON.parse(e.data));
+    });
+    es.addEventListener('pipeline_done', e => {
+      const d = JSON.parse(e.data);
+      toast(`Sync complete — ${d.threats_created||0} new threats`, 'success');
+      if (onDone) onDone(d);
+    });
     es.onerror = () => es.close();
   } catch {}
 }
@@ -128,11 +128,11 @@ function globalSearch(q) {
     let html = '';
     if (d.threats?.length) {
       html += `<div class="text-xs text-3 mb-2">THREATS</div>`;
-      html += d.threats.slice(0,6).map(t=>`<div style="padding:7px 0;border-bottom:1px solid var(--border)"><a href="/threat-detail.html?id=${t.id}" style="color:var(--text);font-size:.84rem;font-weight:500">${esc(t.title)}</a> ${sevBadge(t.severity)}</div>`).join('');
+      html += d.threats.slice(0,6).map(t=>`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><a href="/threat-detail.html?id=${t.id}" style="color:var(--text);font-size:0.82rem;font-weight:500">${esc(t.title)}</a> ${sevBadge(t.severity)}</div>`).join('');
     }
     if (d.cves?.length) {
       html += `<div class="text-xs text-3 mt-3 mb-2">CVEs</div>`;
-      html += d.cves.slice(0,4).map(c=>`<a href="/threat-detail.html?id=${c.threat_id}" style="display:block;padding:4px 0;font-family:'JetBrains Mono',monospace;font-size:.8rem;color:var(--critical)">${c.cve_id} <span style="color:var(--text-3)">${c.cvss_score||'N/A'}</span></a>`).join('');
+      html += d.cves.slice(0,4).map(c=>`<a href="/threat-detail.html?id=${c.threat_id}" style="display:block;padding:4px 0;font-family:var(--mono);font-size:0.78rem;color:var(--critical)">${c.cve_id} <span style="color:var(--text-3)">${c.cvss_score||'N/A'}</span></a>`).join('');
     }
     if (!d.threats?.length && !d.cves?.length) html = `<div class="text-sm text-3">No results found</div>`;
     el.innerHTML = html;

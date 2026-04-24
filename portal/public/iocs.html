@@ -10,9 +10,11 @@
   <nav class="sidebar">
     <div class="logo">
       <div class="logo-icon">🛡</div>
-      <div class="logo-name">Threat Intelligence</div>
-      <div class="logo-sub">Powered by Claude AI</div>
-      <div class="live-pill"><span class="live-dot"></span> Live</div>
+      <div class="logo-text">
+        <div class="logo-name">CTI Platform</div>
+        <div class="logo-sub">by Claude AI</div>
+      </div>
+      <div class="live-pill"><span class="live-dot"></span>Live</div>
     </div>
     <div class="nav">
       <div class="nav-label">Intelligence</div>
@@ -20,14 +22,20 @@
       <a class="nav-item" href="/threats.html"><span class="nav-icon">🛡</span>Threat Feed</a>
       <a class="nav-item" href="/sectors.html"><span class="nav-icon">🏢</span>Sectors</a>
       <a class="nav-item active" href="/iocs.html"><span class="nav-icon">🔍</span>IOC Explorer</a>
-      <div class="nav-label" style="margin-top:8px">System</div>
+      <div class="nav-label" style="margin-top:6px">System</div>
       <a class="nav-item" href="/feeds.html"><span class="nav-icon">📡</span>Feed Health</a>
+    </div>
+    <div class="sidebar-footer">
+      <button class="btn btn-ghost btn-sm" onclick="triggerPipeline()" style="width:100%;margin-bottom:10px;justify-content:center">↻ Sync Now</button>
+      <div class="meta-row">
+        <span class="text-xs text-3">Schedule</span>
+        <span class="text-xs text-2">Every 3 hours</span>
+      </div>
     </div>
   </nav>
   <div class="main">
     <div class="topbar">
       <div class="page-title">IOC Explorer</div>
-      <div class="clock" id="utc-clock">00:00:00 UTC</div>
       <button class="btn btn-ghost" onclick="exportIocs()">↓ Export CSV</button>
     </div>
     <div class="content">
@@ -54,7 +62,7 @@
           <option value="70">Confidence ≥ 70%</option>
           <option value="85">Confidence ≥ 85%</option>
         </select>
-        <input type="text" class="filter-select" id="f-ioc-search" placeholder="Search IOC value…" oninput="loadIocs()" style="width:220px">
+        <input type="text" class="filter-select" id="f-ioc-search" placeholder="Search IOC value…" oninput="loadIocs()" style="width:200px">
       </div>
       <div class="flex gap-2 mb-4 flex-wrap" id="ioc-chips" style="flex-wrap:wrap"></div>
       <div class="card">
@@ -63,7 +71,11 @@
           <span class="text-xs text-3" id="ioc-count">0 IOCs</span>
         </div>
         <div id="iocs-list">
-          <div class="empty"><div class="empty-icon">🔍</div><div class="empty-title">No IOCs yet</div><div class="empty-sub">Run the pipeline to start collecting.</div></div>
+          <div class="empty">
+            <div class="empty-icon">🔍</div>
+            <div class="empty-title">No IOCs yet</div>
+            <div class="empty-sub">Run a sync to start collecting indicators.</div>
+          </div>
         </div>
       </div>
     </div>

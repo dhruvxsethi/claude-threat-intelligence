@@ -29,45 +29,6 @@ export function loadSettings() {
   return yaml.load(raw);
 }
 
-export function getCurrentSlot(settings) {
-  const hour = new Date().getUTCHours();
-  const slotA = settings.pipeline.slot_a_hours;
-  const slotB = settings.pipeline.slot_b_hours;
-  if (slotA.includes(hour)) return 'A';
-  if (slotB.includes(hour)) return 'B';
-  // Not an exact slot hour — run the nearest slot
-  return hour % 6 < 3 ? 'A' : 'B';
-}
-
-export function getFeedsForSlot(feedsConfig, slot) {
-  return feedsConfig.feeds.filter(f =>
-    f.enabled &&
-    f.type === 'rss' &&
-    (f.rotation_slot === slot || f.rotation_slot === 'BOTH')
-  );
-}
-
-export function getNvdFeed(settings) {
-  const since = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().replace('.000Z', '.000');
-  return {
-    id: 'nvd_cve_api',
-    url: `https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=20&pubStartDate=${since}`,
-    name: 'NIST NVD CVE Database',
-    tier: 1,
-    source_credibility: 100,
-  };
-}
-
-export function getCisaKevFeed() {
-  return {
-    id: 'cisa_kev_api',
-    url: 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json',
-    name: 'CISA Known Exploited Vulnerabilities',
-    tier: 1,
-    source_credibility: 100,
-  };
-}
-
 export async function fetchRssFeed(feed) {
   try {
     const result = await parser.parseURL(feed.url);
@@ -130,7 +91,6 @@ export async function fetchCisaKev() {
     );
     if (!res.ok) return { success: false, vulnerabilities: [], error: `HTTP ${res.status}` };
     const data = await res.json();
-    // Return only entries added in the last 7 days
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const recent = (data.vulnerabilities || []).filter(v =>
       v.dateAdded && new Date(v.dateAdded) > cutoff
@@ -180,31 +140,20 @@ export async function fetchGithubAdvisories() {
   }
 }
 
-export async function runAllFeeds(slot, db, log = console.log) {
+export async function runAllFeeds(db, log = console.log) {
   const feedsConfig = loadFeedsConfig();
-  const rssFeeds = getFeedsForSlot(feedsConfig, slot);
+  // Fetch ALL enabled RSS feeds — no slot rotation
+  const rssFeeds = feedsConfig.feeds.filter(f => f.enabled && f.type === 'rss');
 
-  log(`\nFetching ${rssFeeds.length} RSS feeds for slot ${slot}...`);
+  log(`\nFetching ${rssFeeds.length} RSS feeds in parallel...`);
   const results = [];
 
-  // RSS feeds with concurrency control
-  const concurrency = 5;
+  // Concurrency-controlled parallel fetch
+  const concurrency = 8;
   for (let i = 0; i < rssFeeds.length; i += concurrency) {
     const batch = rssFeeds.slice(i, i + concurrency);
     const batchResults = await Promise.all(batch.map(f => fetchRssFeed(f)));
     results.push(...batchResults.map((r, j) => ({ feed: batch[j], ...r })));
-    await new Promise(r => setTimeout(r, 500));
-  }
-
-  // API sources (always run on slot A)
-  const apiResults = { nvd: null, kev: null, github: null };
-  if (slot === 'A') {
-    log('Fetching vulnerability APIs...');
-    [apiResults.nvd, apiResults.kev, apiResults.github] = await Promise.all([
-      fetchNvdCves(),
-      fetchCisaKev(),
-      fetchGithubAdvisories(),
-    ]);
   }
 
   // Update feed health in DB
@@ -228,5 +177,5 @@ export async function runAllFeeds(slot, db, log = console.log) {
     );
   }
 
-  return { rssResults: results, apiResults };
+  return { rssResults: results };
 }

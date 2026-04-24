@@ -10,9 +10,11 @@
   <nav class="sidebar">
     <div class="logo">
       <div class="logo-icon">🛡</div>
-      <div class="logo-name">Threat Intelligence</div>
-      <div class="logo-sub">Powered by Claude AI</div>
-      <div class="live-pill"><span class="live-dot"></span> Live</div>
+      <div class="logo-text">
+        <div class="logo-name">CTI Platform</div>
+        <div class="logo-sub">by Claude AI</div>
+      </div>
+      <div class="live-pill"><span class="live-dot"></span>Live</div>
     </div>
     <div class="nav">
       <div class="nav-label">Intelligence</div>
@@ -20,22 +22,28 @@
       <a class="nav-item active" href="/threats.html"><span class="nav-icon">🛡</span>Threat Feed</a>
       <a class="nav-item" href="/sectors.html"><span class="nav-icon">🏢</span>Sectors</a>
       <a class="nav-item" href="/iocs.html"><span class="nav-icon">🔍</span>IOC Explorer</a>
-      <div class="nav-label" style="margin-top:8px">System</div>
+      <div class="nav-label" style="margin-top:6px">System</div>
       <a class="nav-item" href="/feeds.html"><span class="nav-icon">📡</span>Feed Health</a>
+    </div>
+    <div class="sidebar-footer">
+      <button class="btn btn-ghost btn-sm" onclick="triggerPipeline()" style="width:100%;margin-bottom:10px;justify-content:center">↻ Sync Now</button>
+      <div class="meta-row">
+        <span class="text-xs text-3">Schedule</span>
+        <span class="text-xs text-2">Every 3 hours</span>
+      </div>
     </div>
   </nav>
   <div class="main">
     <div class="topbar">
-      <div class="page-title" style="font-size:.9rem">
+      <div class="page-title" style="font-size:.84rem">
         <a href="/threats.html" style="color:var(--text-3)">Threat Feed</a>
         <span style="color:var(--text-3)"> / </span>
         <span id="bc-title" style="color:var(--text-2)">Loading…</span>
       </div>
-      <div class="clock" id="utc-clock">00:00:00 UTC</div>
     </div>
     <div class="content">
       <div id="detail-root">
-        <div class="empty"><div class="empty-icon">⏳</div><div class="empty-title">Loading threat…</div></div>
+        <div class="empty"><div class="empty-icon">⏳</div><div class="empty-title">Loading…</div></div>
       </div>
     </div>
   </div>

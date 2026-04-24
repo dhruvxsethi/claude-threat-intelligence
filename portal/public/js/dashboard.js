@@ -8,7 +8,7 @@ async function loadStats() {
   setText('s-medium', bySev.medium||0);
   setText('s-today', d.summary?.today_count||0);
   setText('s-cves', d.summary?.cve_count||0);
-  setText('s-kev', `${d.summary?.kev_count||0} in CISA KEV`);
+  setText('s-kev', d.summary?.kev_count ? `${d.summary.kev_count} in KEV` : '');
   setText('s-iocs', d.summary?.ioc_count||0);
   setText('s-feeds', d.summary?.feeds_active||0);
   setText('s-total', d.summary?.total||0);
@@ -31,7 +31,7 @@ async function loadLatest() {
   if (!el) return;
   if (!d.threats?.length) return;
 
-  el.innerHTML = `<div class="table-wrap"><table class="data-table" style="margin:-22px -24px;width:calc(100% + 48px)">
+  el.innerHTML = `<div class="table-wrap"><table class="data-table">
     <thead><tr>
       <th>Severity</th><th>Threat</th><th>Sectors</th><th>Type</th><th>Confidence</th><th>Age</th>
     </tr></thead>
