@@ -1,0 +1,214 @@
+# Sector definitions for threat classification
+# Claude uses these keywords to determine sector relevance of a threat.
+# Do NOT auto-overwrite this file.
+
+sectors:
+
+  banking:
+    name: "Banking & Financial Services"
+    description: "Financial institutions, payment processors, crypto exchanges, fintech, insurance"
+    icon: "🏦"
+    color: "#3b82f6"
+    keywords:
+      - bank
+      - banking
+      - financial
+      - finance
+      - fintech
+      - payment
+      - swift
+      - wire transfer
+      - credit card
+      - debit card
+      - atm
+      - pos terminal
+      - cryptocurrency
+      - crypto exchange
+      - bitcoin
+      - ethereum
+      - blockchain
+      - wallet
+      - trading platform
+      - brokerage
+      - insurance
+      - mortgage
+      - loan
+      - federal reserve
+      - treasury
+      - sec
+      - fincen
+      - pci dss
+      - sox
+      - fatf
+      - money laundering
+      - fraud
+      - skimming
+      - carding
+      - account takeover
+      - ach
+      - nacha
+      - mastercard
+      - visa
+      - paypal
+      - stripe
+      - square
+    threat_types_of_concern:
+      - financial_fraud
+      - ransomware
+      - data_breach
+      - swift_fraud
+      - credential_theft
+      - insider_threat
+      - ddos
+      - apt
+    regulatory_frameworks:
+      - PCI-DSS
+      - SOX
+      - GDPR
+      - GLBA
+      - Basel III
+      - SWIFT CSP
+
+  government:
+    name: "Government & Critical Infrastructure"
+    description: "Federal/state agencies, defense contractors, critical infrastructure, elections, military"
+    icon: "🏛️"
+    color: "#8b5cf6"
+    keywords:
+      - government
+      - federal
+      - agency
+      - military
+      - defense
+      - department of
+      - ministry
+      - pentagon
+      - nato
+      - intelligence
+      - cia
+      - nsa
+      - fbi
+      - dhs
+      - dod
+      - state department
+      - white house
+      - congress
+      - parliament
+      - election
+      - voting
+      - critical infrastructure
+      - power grid
+      - water treatment
+      - utilities
+      - energy
+      - nuclear
+      - oil
+      - gas
+      - pipeline
+      - transportation
+      - aviation
+      - faa
+      - tsa
+      - port
+      - maritime
+      - telecom infrastructure
+      - defense contractor
+      - lockheed
+      - raytheon
+      - northrop
+      - boeing
+      - espionage
+      - nation state
+      - apt
+      - classified
+      - clearance
+    threat_types_of_concern:
+      - nation_state_apt
+      - espionage
+      - sabotage
+      - ransomware
+      - supply_chain
+      - critical_infrastructure_attack
+      - election_interference
+    regulatory_frameworks:
+      - FISMA
+      - NIST 800-53
+      - FedRAMP
+      - CMMC
+      - ITAR
+
+  healthcare:
+    name: "Healthcare & Life Sciences"
+    description: "Hospitals, pharma, medical devices, health insurers, biotech, genomics"
+    icon: "🏥"
+    color: "#22c55e"
+    keywords:
+      - hospital
+      - healthcare
+      - health system
+      - medical
+      - clinic
+      - pharmacy
+      - pharmaceutical
+      - pharma
+      - drug
+      - fda
+      - ema
+      - nih
+      - cdc
+      - who
+      - biotech
+      - genomics
+      - dna
+      - patient
+      - ehr
+      - emr
+      - medical record
+      - hipaa
+      - phi
+      - medical device
+      - implant
+      - pacemaker
+      - insulin pump
+      - infusion pump
+      - radiology
+      - dicom
+      - lab
+      - diagnostic
+      - telehealth
+      - health insurance
+      - medicare
+      - medicaid
+      - blue cross
+      - clinical trial
+      - vaccine
+      - bio
+      - life sciences
+    threat_types_of_concern:
+      - ransomware
+      - data_breach
+      - phi_theft
+      - medical_device_hack
+      - research_espionage
+      - supply_chain
+    regulatory_frameworks:
+      - HIPAA
+      - HITECH
+      - FDA 21 CFR Part 11
+      - GDPR
+      - ISO 13485
+
+# Severity thresholds for sector impact rating
+severity_thresholds:
+  critical:
+    description: "Active exploitation confirmed, mass impact, life-safety risk"
+    credibility_min: 60
+  high:
+    description: "High confidence threat, significant sector exposure"
+    credibility_min: 40
+  medium:
+    description: "Credible threat, moderate exposure"
+    credibility_min: 20
+  low:
+    description: "Early warning, limited confirmed impact"
+    credibility_min: 0

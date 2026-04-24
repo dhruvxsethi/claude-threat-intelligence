@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Threat Detail — CTI Platform</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div class="app">
+  <nav class="sidebar">
+    <div class="logo">
+      <div class="logo-title"><span class="live-dot"></span>CTI Platform</div>
+      <div class="logo-sub">Powered by Claude AI</div>
+    </div>
+    <div class="nav">
+      <div class="nav-section">Intelligence</div>
+      <a class="nav-item" href="/"><span class="nav-icon">⚡</span> Dashboard</a>
+      <a class="nav-item active" href="/threats.html"><span class="nav-icon">🛡</span> Threat Feed</a>
+      <a class="nav-item" href="/sectors.html"><span class="nav-icon">🏢</span> Sectors</a>
+      <a class="nav-item" href="/iocs.html"><span class="nav-icon">🔍</span> IOC Explorer</a>
+      <div class="nav-section" style="margin-top:8px">System</div>
+      <a class="nav-item" href="/feeds.html"><span class="nav-icon">📡</span> Feed Health</a>
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="page-title">
+        <a href="/threats.html" style="color:var(--text-muted)">Threat Feed</a>
+        <span style="color:var(--text-muted)"> / </span>
+        <span id="breadcrumb-title">Loading...</span>
+      </div>
+      <div class="topbar-time" id="utc-clock">00:00:00 UTC</div>
+    </div>
+
+    <div class="content">
+      <div id="detail-content">
+        <div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">Loading threat...</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast-container" id="toasts"></div>
+<script src="/js/common.js"></script>
+<script src="/js/threat-detail.js"></script>
+</body>
+</html>

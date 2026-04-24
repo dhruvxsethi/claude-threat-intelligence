@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IOC Explorer — CTI Platform</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div class="app">
+  <nav class="sidebar">
+    <div class="logo">
+      <div class="logo-title"><span class="live-dot"></span>CTI Platform</div>
+      <div class="logo-sub">Powered by Claude AI</div>
+    </div>
+    <div class="nav">
+      <div class="nav-section">Intelligence</div>
+      <a class="nav-item" href="/"><span class="nav-icon">⚡</span> Dashboard</a>
+      <a class="nav-item" href="/threats.html"><span class="nav-icon">🛡</span> Threat Feed</a>
+      <a class="nav-item" href="/sectors.html"><span class="nav-icon">🏢</span> Sectors</a>
+      <a class="nav-item active" href="/iocs.html"><span class="nav-icon">🔍</span> IOC Explorer</a>
+      <div class="nav-section" style="margin-top:8px">System</div>
+      <a class="nav-item" href="/feeds.html"><span class="nav-icon">📡</span> Feed Health</a>
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="page-title">IOC Explorer</div>
+      <div class="topbar-time" id="utc-clock">00:00:00 UTC</div>
+      <button class="btn btn-ghost" onclick="exportIocs()">↓ Export CSV</button>
+    </div>
+
+    <div class="content">
+      <div class="filters">
+        <select class="filter-select" id="f-ioc-type" onchange="loadIocs()">
+          <option value="">All Types</option>
+          <option value="ip">IP Address</option>
+          <option value="domain">Domain</option>
+          <option value="url">URL</option>
+          <option value="hash_md5">MD5 Hash</option>
+          <option value="hash_sha256">SHA256 Hash</option>
+          <option value="email">Email</option>
+          <option value="file_path">File Path</option>
+          <option value="registry_key">Registry Key</option>
+          <option value="mutex">Mutex</option>
+        </select>
+        <select class="filter-select" id="f-ioc-days" onchange="loadIocs()">
+          <option value="1">Last 24h</option>
+          <option value="7" selected>Last 7 days</option>
+          <option value="30">Last 30 days</option>
+        </select>
+        <select class="filter-select" id="f-ioc-confidence" onchange="loadIocs()">
+          <option value="50">Confidence ≥ 50%</option>
+          <option value="70">Confidence ≥ 70%</option>
+          <option value="85">Confidence ≥ 85%</option>
+        </select>
+        <input type="text" class="filter-select" id="f-ioc-search" placeholder="Search IOC value..." oninput="loadIocs()" style="width:220px">
+      </div>
+
+      <!-- IOC type summary chips -->
+      <div class="flex gap-2 mb-4 flex-wrap" id="ioc-type-chips"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Indicators of Compromise</div>
+          <span class="text-xs text-muted" id="ioc-count">0 IOCs</span>
+        </div>
+        <div id="iocs-list">
+          <div class="empty-state">
+            <div class="empty-icon">🔍</div>
+            <div class="empty-title">No IOCs yet</div>
+            <div class="empty-sub">Run the pipeline to start collecting IOCs.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast-container" id="toasts"></div>
+<script src="/js/common.js"></script>
+<script src="/js/iocs.js"></script>
+</body>
+</html>

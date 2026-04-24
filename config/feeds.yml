@@ -1,0 +1,359 @@
+# Threat Intelligence Feed Sources
+# Organized by tier (1=most authoritative, 5=supplementary)
+# rotation_slot: A = vulnerability APIs, B = news/blogs, BOTH = always runs
+# last_updated: auto-updated by the pipeline
+# Do NOT auto-overwrite this file.
+
+feeds:
+
+  # ─── TIER 1: OFFICIAL GOVERNMENT & CERT SOURCES ───────────────────────────
+
+  - id: cisa_advisories
+    name: "CISA Cybersecurity Advisories"
+    url: "https://www.cisa.gov/cybersecurity-advisories/feed"
+    type: rss
+    tier: 1
+    rotation_slot: A
+    sectors: [government, banking, healthcare]
+    enabled: true
+    source_credibility: 100
+
+  - id: cisa_kev_api
+    name: "CISA Known Exploited Vulnerabilities"
+    url: "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+    type: json_api
+    tier: 1
+    rotation_slot: A
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 100
+
+  - id: nvd_cve_api
+    name: "NIST NVD CVE Database"
+    url: "https://services.nvd.nist.gov/rest/json/cves/2.0"
+    type: json_api
+    tier: 1
+    rotation_slot: A
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 100
+    params:
+      resultsPerPage: 20
+      pubStartDate: "dynamic_last_run"
+
+  - id: ncsc_uk
+    name: "UK NCSC Alerts & Advisories"
+    url: "https://www.ncsc.gov.uk/api/1/services/v1/report-rss-feed.xml"
+    type: rss
+    tier: 1
+    rotation_slot: A
+    sectors: [government, banking]
+    enabled: true
+    source_credibility: 98
+
+  - id: github_security_advisories
+    name: "GitHub Security Advisories"
+    url: "https://api.github.com/advisories"
+    type: json_api
+    tier: 1
+    rotation_slot: A
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 92
+    params:
+      per_page: 30
+      type: reviewed
+
+  # ─── TIER 2: MAJOR SECURITY VENDORS ─────────────────────────────────────
+
+  - id: crowdstrike_blog
+    name: "CrowdStrike Adversary Intelligence"
+    url: "https://www.crowdstrike.com/blog/category/threat-intelligence/feed/"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 90
+
+  - id: mandiant_blog
+    name: "Mandiant Threat Intelligence"
+    url: "https://www.mandiant.com/resources/blog/rss.xml"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 92
+
+  - id: talos_intelligence
+    name: "Cisco Talos Intelligence"
+    url: "https://blog.talosintelligence.com/feeds/posts/default"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 90
+
+  - id: unit42_palo
+    name: "Palo Alto Unit 42"
+    url: "https://unit42.paloaltonetworks.com/feed/"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 90
+
+  - id: microsoft_security
+    name: "Microsoft Security Blog"
+    url: "https://www.microsoft.com/en-us/security/blog/feed/"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 88
+
+  - id: google_tag
+    name: "Google Threat Analysis Group"
+    url: "https://blog.google/threat-analysis-group/rss/"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [government, banking]
+    enabled: true
+    source_credibility: 90
+
+  - id: securelist_kaspersky
+    name: "Kaspersky SecureList"
+    url: "https://securelist.com/feed/"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 85
+
+  - id: checkpoint_research
+    name: "Check Point Research"
+    url: "https://research.checkpoint.com/feed/"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 87
+
+  - id: proofpoint_threat
+    name: "Proofpoint Threat Insight"
+    url: "https://www.proofpoint.com/us/blog/threat-insight/rss.xml"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 86
+
+  - id: sentinelone_blog
+    name: "SentinelOne Research"
+    url: "https://www.sentinelone.com/blog/feed/"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 84
+
+  - id: recorded_future_blog
+    name: "Recorded Future Intelligence"
+    url: "https://www.recordedfuture.com/blog/rss.xml"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 88
+
+  # ─── TIER 3: ESTABLISHED SECURITY NEWS ──────────────────────────────────
+
+  - id: krebs_on_security
+    name: "Krebs on Security"
+    url: "https://krebsonsecurity.com/feed/"
+    type: rss
+    tier: 3
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 82
+
+  - id: the_hacker_news
+    name: "The Hacker News"
+    url: "https://feeds.feedburner.com/TheHackersNews"
+    type: rss
+    tier: 3
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 75
+
+  - id: bleeping_computer
+    name: "Bleeping Computer"
+    url: "https://www.bleepingcomputer.com/feed/"
+    type: rss
+    tier: 3
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 78
+
+  - id: security_week
+    name: "SecurityWeek"
+    url: "https://www.securityweek.com/feed/"
+    type: rss
+    tier: 3
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 76
+
+  - id: dark_reading
+    name: "Dark Reading"
+    url: "https://www.darkreading.com/rss.xml"
+    type: rss
+    tier: 3
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 74
+
+  - id: cyberscoop
+    name: "CyberScoop"
+    url: "https://cyberscoop.com/feed/"
+    type: rss
+    tier: 3
+    rotation_slot: B
+    sectors: [government, banking]
+    enabled: true
+    source_credibility: 76
+
+  - id: sans_isc
+    name: "SANS Internet Storm Center"
+    url: "https://isc.sans.edu/rssfeed.xml"
+    type: rss
+    tier: 3
+    rotation_slot: A
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 80
+
+  - id: schneier_security
+    name: "Schneier on Security"
+    url: "https://www.schneier.com/feed/atom/"
+    type: rss
+    tier: 3
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 80
+
+  - id: infosecurity_magazine
+    name: "Infosecurity Magazine"
+    url: "https://www.infosecurity-magazine.com/rss/news/"
+    type: rss
+    tier: 3
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 72
+
+  - id: sophos_naked_security
+    name: "Sophos Naked Security"
+    url: "https://nakedsecurity.sophos.com/feed/"
+    type: rss
+    tier: 3
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 78
+
+  # ─── TIER 4: SECTOR-SPECIFIC SOURCES ────────────────────────────────────
+
+  - id: bankinfosecurity
+    name: "BankInfoSecurity"
+    url: "https://www.bankinfosecurity.com/rss-feeds"
+    type: rss
+    tier: 4
+    rotation_slot: B
+    sectors: [banking]
+    enabled: true
+    source_credibility: 74
+
+  - id: govinfosecurity
+    name: "GovInfoSecurity"
+    url: "https://www.govinfosecurity.com/rss-feeds"
+    type: rss
+    tier: 4
+    rotation_slot: B
+    sectors: [government]
+    enabled: true
+    source_credibility: 74
+
+  - id: healthcareitnews
+    name: "Healthcare IT News"
+    url: "https://www.healthcareitnews.com/rss.xml"
+    type: rss
+    tier: 4
+    rotation_slot: B
+    sectors: [healthcare]
+    enabled: true
+    source_credibility: 72
+
+  - id: hipaa_journal
+    name: "HIPAA Journal"
+    url: "https://www.hipaajournal.com/feed/"
+    type: rss
+    tier: 4
+    rotation_slot: B
+    sectors: [healthcare]
+    enabled: true
+    source_credibility: 70
+
+  - id: finextra
+    name: "Finextra Security"
+    url: "https://www.finextra.com/rss/headlines.aspx"
+    type: rss
+    tier: 4
+    rotation_slot: B
+    sectors: [banking]
+    enabled: true
+    source_credibility: 68
+
+  # ─── TIER 5: SUPPLEMENTARY & COMMUNITY INTEL ────────────────────────────
+
+  - id: graham_cluley
+    name: "Graham Cluley"
+    url: "https://grahamcluley.com/feed/"
+    type: rss
+    tier: 5
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 72
+
+  - id: threatpost
+    name: "Threatpost"
+    url: "https://threatpost.com/feed/"
+    type: rss
+    tier: 5
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 70
+
+# Feed health tracking (auto-updated by pipeline)
+_metadata:
+  total_feeds: 32
+  last_feed_discovery: null
+  next_feed_discovery: null

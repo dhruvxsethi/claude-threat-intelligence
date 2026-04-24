@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Threat Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ─── Sidebar ─────────────────────────────────────────────────────── -->
+  <nav class="sidebar">
+    <div class="logo">
+      <div class="logo-title">
+        <span class="live-dot"></span>CTI Platform
+      </div>
+      <div class="logo-sub">Powered by Claude AI</div>
+    </div>
+
+    <div class="nav">
+      <div class="nav-section">Intelligence</div>
+      <a class="nav-item active" href="/" onclick="navigate('dashboard',this)">
+        <span class="nav-icon">⚡</span> Dashboard
+      </a>
+      <a class="nav-item" href="/threats.html">
+        <span class="nav-icon">🛡</span> Threat Feed
+      </a>
+      <a class="nav-item" href="/sectors.html">
+        <span class="nav-icon">🏢</span> Sectors
+      </a>
+      <a class="nav-item" href="/iocs.html">
+        <span class="nav-icon">🔍</span> IOC Explorer
+      </a>
+
+      <div class="nav-section" style="margin-top:8px">System</div>
+      <a class="nav-item" href="/feeds.html">
+        <span class="nav-icon">📡</span> Feed Health
+      </a>
+    </div>
+
+    <div class="sidebar-footer">
+      <div id="last-run" class="text-xs">Loading...</div>
+      <div class="text-xs mt-1">Next: <span id="next-run">—</span></div>
+    </div>
+  </nav>
+
+  <!-- ─── Main ─────────────────────────────────────────────────────────── -->
+  <div class="main">
+    <div class="topbar">
+      <div class="page-title">Dashboard</div>
+      <div class="search-bar">
+        <span>🔍</span>
+        <input type="text" id="global-search" placeholder="Search threats, CVEs, IOCs..." onkeyup="globalSearch(this.value)">
+      </div>
+      <div class="topbar-time" id="utc-clock">00:00:00 UTC</div>
+      <button class="btn btn-primary" onclick="triggerPipeline()">▶ Run Pipeline</button>
+    </div>
+
+    <div class="content">
+
+      <!-- Stats Grid -->
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card critical">
+          <div class="stat-value" id="stat-critical">—</div>
+          <div class="stat-label">Critical</div>
+        </div>
+        <div class="stat-card high">
+          <div class="stat-value" id="stat-high">—</div>
+          <div class="stat-label">High</div>
+        </div>
+        <div class="stat-card medium">
+          <div class="stat-value" id="stat-medium">—</div>
+          <div class="stat-label">Medium</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-value" id="stat-today">—</div>
+          <div class="stat-label">Today</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-value" id="stat-cves">—</div>
+          <div class="stat-label">CVEs</div>
+        </div>
+        <div class="stat-card critical">
+          <div class="stat-value" id="stat-kev">—</div>
+          <div class="stat-label">In KEV</div>
+        </div>
+        <div class="stat-card purple">
+          <div class="stat-value" id="stat-iocs">—</div>
+          <div class="stat-label">IOCs</div>
+        </div>
+        <div class="stat-card low">
+          <div class="stat-value" id="stat-feeds">—</div>
+          <div class="stat-label">Live Feeds</div>
+        </div>
+      </div>
+
+      <!-- Sector Overview -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <div class="card-title">Sector Exposure (7 days)</div>
+        </div>
+        <div class="flex gap-4" id="sector-overview">
+          <div class="flex-1 text-center" style="padding:16px;background:var(--surface-2);border-radius:8px;border:1px solid var(--border)">
+            <div style="font-size:1.8rem">🏦</div>
+            <div style="font-size:1.4rem;font-weight:700;color:var(--banking)" id="sec-banking">—</div>
+            <div class="text-xs text-muted mt-1">Banking</div>
+          </div>
+          <div class="flex-1 text-center" style="padding:16px;background:var(--surface-2);border-radius:8px;border:1px solid var(--border)">
+            <div style="font-size:1.8rem">🏛️</div>
+            <div style="font-size:1.4rem;font-weight:700;color:var(--government)" id="sec-government">—</div>
+            <div class="text-xs text-muted mt-1">Government</div>
+          </div>
+          <div class="flex-1 text-center" style="padding:16px;background:var(--surface-2);border-radius:8px;border:1px solid var(--border)">
+            <div style="font-size:1.8rem">🏥</div>
+            <div style="font-size:1.4rem;font-weight:700;color:var(--healthcare)" id="sec-healthcare">—</div>
+            <div class="text-xs text-muted mt-1">Healthcare</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="charts-grid">
+        <div class="chart-card">
+          <div class="chart-title">Threats Over Time (7 days)</div>
+          <canvas id="chart-timeline"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">By Threat Type</div>
+          <canvas id="chart-types"></canvas>
+        </div>
+      </div>
+
+      <!-- Bottom Grid -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+
+        <!-- Critical CVEs -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">🔴 Critical CVEs</div>
+            <a href="/iocs.html" class="text-xs text-muted">View all →</a>
+          </div>
+          <div id="critical-cves">
+            <div class="empty-state" style="padding:20px">
+              <div class="text-muted text-sm">No critical CVEs yet</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Top Threat Actors -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">👤 Active Threat Actors</div>
+          </div>
+          <div id="top-actors">
+            <div class="empty-state" style="padding:20px">
+              <div class="text-muted text-sm">No actors detected yet</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Latest Threats -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Latest Threats</div>
+          <a href="/threats.html" class="text-xs text-muted">View all →</a>
+        </div>
+        <div id="latest-threats">
+          <div class="empty-state">
+            <div class="empty-icon">🛡</div>
+            <div class="empty-title">No threats ingested yet</div>
+            <div class="empty-sub">Click "Run Pipeline" to fetch your first batch of intelligence.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Search Results Overlay -->
+<div id="search-overlay" class="hidden" style="position:fixed;top:52px;right:0;left:220px;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;z-index:200;box-shadow:var(--shadow)">
+  <div id="search-results"></div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toasts"></div>
+
+<script src="/js/common.js"></script>
+<script src="/js/charts.js"></script>
+<script src="/js/dashboard.js"></script>
+</body>
+</html>

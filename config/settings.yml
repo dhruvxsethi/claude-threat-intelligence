@@ -1,0 +1,71 @@
+# Global platform settings
+# Do NOT auto-overwrite this file.
+
+platform:
+  name: "Claude Threat Intelligence"
+  version: "1.0.0"
+  port: 3000
+
+claude:
+  model: "claude-sonnet-4-6"
+  max_tokens: 4096
+  temperature: 0
+  # Prompt caching enabled for system prompts (saves ~80% tokens on repeated runs)
+  use_prompt_caching: true
+  # Max articles to analyze per pipeline run (cost control)
+  max_articles_per_run: 50
+  # Skip articles older than this many hours
+  max_article_age_hours: 48
+
+pipeline:
+  # Rotation slots: A runs at 0,6,12,18 UTC | B runs at 3,9,15,21 UTC
+  slot_a_hours: [0, 6, 12, 18]
+  slot_b_hours: [3, 9, 15, 21]
+  # Max concurrent article fetches
+  concurrency: 5
+  # Seconds between requests to same domain
+  rate_limit_delay: 2
+  # Article fetch timeout (ms)
+  fetch_timeout: 15000
+  # Min article length to bother analyzing (chars)
+  min_article_length: 500
+
+credibility:
+  # Source tier weights (tier 1-5 mapped to 0-40 points)
+  source_tier_weights: [40, 32, 24, 16, 8]
+  # Technical richness bonuses
+  has_cve_bonus: 15
+  has_ioc_bonus: 10
+  has_mitre_bonus: 10
+  has_threat_actor_bonus: 8
+  has_affected_products_bonus: 7
+  # Corroboration: +points per additional source covering same event
+  corroboration_per_source: 5
+  corroboration_max: 20
+  # Minimum score to store a threat (0 = store everything)
+  min_score_to_store: 0
+
+portal:
+  # How often the frontend polls for new data (seconds)
+  poll_interval: 30
+  # Max threats shown per page
+  page_size: 25
+  # Days of history shown by default
+  default_history_days: 7
+
+feeds:
+  # How often to check for dead/redirected feeds (hours)
+  health_check_interval: 24
+  # How often Claude discovers and suggests new feeds (hours)
+  discovery_interval: 168  # weekly
+  # Max feed fetch timeout (ms)
+  fetch_timeout: 10000
+
+database:
+  path: "data/threats.db"
+  # WAL mode for concurrent read/write
+  wal_mode: true
+  # Days to keep raw article cache
+  raw_cache_days: 7
+  # Days to retain full threat records
+  retention_days: 90
