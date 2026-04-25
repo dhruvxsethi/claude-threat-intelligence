@@ -33,30 +33,45 @@
     <span class="text-xs text-3" id="ioc-count"></span>
   </div>
 
-  <div class="filters mb-4">
-    <select class="filter-select" id="f-ioc-type" onchange="loadIocs()">
-      <option value="">All Types</option>
-      <option value="ip">IP Address</option>
-      <option value="domain">Domain</option>
-      <option value="url">URL</option>
-      <option value="hash_md5">MD5</option>
-      <option value="hash_sha256">SHA256</option>
-      <option value="email">Email</option>
-      <option value="file_path">File Path</option>
-      <option value="registry_key">Registry Key</option>
-      <option value="mutex">Mutex</option>
-    </select>
-    <select class="filter-select" id="f-ioc-days" onchange="loadIocs()">
-      <option value="1">Last 24h</option>
-      <option value="7" selected>Last 7 days</option>
-      <option value="30">Last 30 days</option>
-    </select>
-    <select class="filter-select" id="f-ioc-confidence" onchange="loadIocs()">
-      <option value="50">Confidence 50%+</option>
-      <option value="70">Confidence 70%+</option>
-      <option value="85">Confidence 85%+</option>
-    </select>
-    <input type="text" class="filter-select" id="f-ioc-search" placeholder="Search IOC value…" oninput="loadIocs()" style="width:200px">
+  <div class="filter-panel ioc-filter-panel mb-4">
+    <div class="ioc-filter-grid">
+      <div class="fp-group fp-group--stack">
+        <span class="fp-label">Type</span>
+        <select class="filter-select" id="f-ioc-type" onchange="loadIocs()">
+          <option value="">All Types</option>
+          <option value="ip">IP Address</option>
+          <option value="domain">Domain</option>
+          <option value="url">URL</option>
+          <option value="hash_md5">MD5</option>
+          <option value="hash_sha1">SHA1</option>
+          <option value="hash_sha256">SHA256</option>
+          <option value="email">Email</option>
+          <option value="file_path">File Path</option>
+          <option value="registry_key">Registry Key</option>
+          <option value="mutex">Mutex</option>
+        </select>
+      </div>
+      <div class="fp-group fp-group--stack">
+        <span class="fp-label">Window</span>
+        <select class="filter-select" id="f-ioc-days" onchange="loadIocs()">
+          <option value="1">Last 24h</option>
+          <option value="7" selected>Last 7 days</option>
+          <option value="30">Last 30 days</option>
+        </select>
+      </div>
+      <div class="fp-group fp-group--stack">
+        <span class="fp-label">Confidence</span>
+        <select class="filter-select" id="f-ioc-confidence" onchange="loadIocs()">
+          <option value="50">50%+</option>
+          <option value="70">70%+</option>
+          <option value="85">85%+</option>
+        </select>
+      </div>
+      <div class="fp-group fp-group--stack ioc-search-group">
+        <span class="fp-label">Search</span>
+        <input type="text" class="filter-input" id="f-ioc-search" placeholder="Search IOC value…" oninput="loadIocs()">
+      </div>
+    </div>
   </div>
 
   <div class="flex gap-2 mb-4" id="ioc-chips" style="flex-wrap:wrap"></div>
@@ -65,7 +80,7 @@
     <div class="card-head">
       <div class="card-title">Indicators of Compromise</div>
     </div>
-    <div id="iocs-list">
+    <div id="iocs-list" class="ioc-table-wrap">
       <div class="empty">
         <div class="empty-title">No IOCs yet</div>
         <div class="empty-sub">Run a sync to start collecting indicators.</div>

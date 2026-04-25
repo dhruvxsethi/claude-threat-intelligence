@@ -27,14 +27,27 @@ function renderIocs(iocs) {
     el.innerHTML=`<div class="empty"><div class="empty-icon">🔍</div><div class="empty-title">No IOCs found</div><div class="empty-sub">Adjust filters or run the pipeline.</div></div>`;
     return;
   }
-  el.innerHTML=iocs.map(i=>`<div class="ioc-row">
-    ${iocPill(i.ioc_type)}
-    <span class="ioc-val" title="${esc(i.ioc_value)}">${esc(i.ioc_value)}</span>
-    ${i.malware_family?`<span class="text-xs" style="color:var(--medium);white-space:nowrap">${esc(i.malware_family)}</span>`:''}
-    <a href="/threat-detail.html?id=${i.threat_id}" class="text-xs text-3" style="white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis">${esc((i.threat_title||'').slice(0,40))}</a>
-    <span class="ioc-conf">${i.confidence}%</span>
-    <button class="copy-btn" onclick="copyToClipboard('${i.ioc_value.replace(/'/g,"\\'")}')">⎘</button>
-  </div>`).join('');
+  el.innerHTML=`<div class="ioc-table">
+    <div class="ioc-table-head">
+      <div>Type</div>
+      <div>Indicator</div>
+      <div>Context</div>
+      <div>Threat</div>
+      <div>Confidence</div>
+      <div></div>
+    </div>
+    ${iocs.map(i=>`<div class="ioc-table-row">
+      <div class="ioc-type-cell">${iocPill(i.ioc_type)}</div>
+      <div class="ioc-value-cell">
+        <div class="ioc-value-text" title="${esc(i.ioc_value)}">${esc(i.ioc_value)}</div>
+        ${i.context?`<div class="ioc-context-line">${esc(i.context)}</div>`:''}
+      </div>
+      <div class="ioc-family-cell">${i.malware_family?esc(i.malware_family):'<span class="text-3">—</span>'}</div>
+      <a href="/threat-detail.html?id=${i.threat_id}" class="ioc-threat-link" title="${esc(i.threat_title||'')}">${esc(i.threat_title||'Untitled threat')}</a>
+      <div class="ioc-confidence-cell"><span>${i.confidence}%</span></div>
+      <button class="copy-btn ioc-copy-btn" title="Copy IOC" onclick="copyToClipboard('${i.ioc_value.replace(/'/g,"\\'")}')">⎘</button>
+    </div>`).join('')}
+  </div>`;
 }
 
 function exportIocs() {
