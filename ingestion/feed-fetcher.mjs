@@ -29,6 +29,35 @@ export function loadSettings() {
   return yaml.load(raw);
 }
 
+function isoDateForApi(date) {
+  return date.toISOString().replace(/\.\d{3}Z$/, '.000Z');
+}
+
+function getJsonHeaders() {
+  const headers = { 'User-Agent': 'ClaudeThreatIntelligence/1.0' };
+  if (process.env.NVD_API_KEY) headers.apiKey = process.env.NVD_API_KEY;
+  return headers;
+}
+
+function normalizeNvdCve(v) {
+  const cve = v.cve;
+  const metrics = cve.metrics?.cvssMetricV31?.[0] || cve.metrics?.cvssMetricV30?.[0] || cve.metrics?.cvssMetricV2?.[0];
+  const desc = cve.descriptions?.find(d => d.lang === 'en')?.value || '';
+  return {
+    cve_id: cve.id,
+    cvss_score: metrics?.cvssData?.baseScore || null,
+    cvss_vector: metrics?.cvssData?.vectorString || null,
+    cvss_severity: metrics?.cvssData?.baseSeverity || null,
+    description: desc,
+    published_date: cve.published,
+    affected_products: (cve.configurations || []).flatMap(c =>
+      c.nodes?.flatMap(n => n.cpeMatch?.map(m => m.criteria) || []) || []
+    ).slice(0, 10),
+    references: (cve.references || []).map(r => r.url).slice(0, 5),
+    source_url: `https://nvd.nist.gov/vuln/detail/${cve.id}`,
+  };
+}
+
 export async function fetchRssFeed(feed) {
   try {
     const result = await parser.parseURL(feed.url);
@@ -49,35 +78,40 @@ export async function fetchRssFeed(feed) {
   }
 }
 
-export async function fetchNvdCves() {
+export async function fetchNvdCves({ hoursBack = 48, resultsPerPage = 2000, maxPages = 5 } = {}) {
   try {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('.')[0] + '.000';
-    const url = `https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=20&pubStartDate=${since}`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'ClaudeThreatIntelligence/1.0' },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) return { success: false, cves: [], error: `HTTP ${res.status}` };
-    const data = await res.json();
-    const cves = (data.vulnerabilities || []).map(v => {
-      const cve = v.cve;
-      const metrics = cve.metrics?.cvssMetricV31?.[0] || cve.metrics?.cvssMetricV30?.[0] || cve.metrics?.cvssMetricV2?.[0];
-      const desc = cve.descriptions?.find(d => d.lang === 'en')?.value || '';
-      return {
-        cve_id: cve.id,
-        cvss_score: metrics?.cvssData?.baseScore || null,
-        cvss_vector: metrics?.cvssData?.vectorString || null,
-        cvss_severity: metrics?.cvssData?.baseSeverity || null,
-        description: desc,
-        published_date: cve.published,
-        affected_products: (cve.configurations || []).flatMap(c =>
-          c.nodes?.flatMap(n => n.cpeMatch?.map(m => m.criteria) || []) || []
-        ).slice(0, 10),
-        references: (cve.references || []).map(r => r.url).slice(0, 5),
-        source_url: `https://nvd.nist.gov/vuln/detail/${cve.id}`,
-      };
-    });
-    return { success: true, cves };
+    const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+    const until = new Date();
+    const cves = [];
+    let startIndex = 0;
+    let totalResults = Infinity;
+    let pages = 0;
+
+    while (startIndex < totalResults && pages < maxPages) {
+      const url = new URL('https://services.nvd.nist.gov/rest/json/cves/2.0');
+      url.searchParams.set('resultsPerPage', String(resultsPerPage));
+      url.searchParams.set('startIndex', String(startIndex));
+      url.searchParams.set('pubStartDate', isoDateForApi(since));
+      url.searchParams.set('pubEndDate', isoDateForApi(until));
+      url.searchParams.set('noRejected', '');
+
+      const res = await fetch(url, {
+        headers: getJsonHeaders(),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!res.ok) return { success: false, cves: [], error: `HTTP ${res.status}: ${await res.text()}` };
+
+      const data = await res.json();
+      const vulnerabilities = data.vulnerabilities || [];
+      cves.push(...vulnerabilities.map(normalizeNvdCve));
+
+      totalResults = data.totalResults || vulnerabilities.length;
+      startIndex += data.resultsPerPage || vulnerabilities.length || resultsPerPage;
+      pages++;
+    }
+
+    cves.sort((a, b) => new Date(b.published_date || 0) - new Date(a.published_date || 0));
+    return { success: true, cves, total: totalResults };
   } catch (err) {
     return { success: false, cves: [], error: err.message };
   }
@@ -101,19 +135,25 @@ export async function fetchCisaKev() {
   }
 }
 
-export async function fetchGithubAdvisories() {
+export async function fetchGithubAdvisories({ hoursBack = 48, perPage = 100 } = {}) {
   try {
-    const res = await fetch(
-      'https://api.github.com/advisories?per_page=30&type=reviewed',
-      {
-        headers: {
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'ClaudeThreatIntelligence/1.0',
-        },
-        signal: AbortSignal.timeout(15000),
-      }
-    );
-    if (!res.ok) return { success: false, advisories: [], error: `HTTP ${res.status}` };
+    const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const url = new URL('https://api.github.com/advisories');
+    url.searchParams.set('per_page', String(perPage));
+    url.searchParams.set('type', 'reviewed');
+    url.searchParams.set('sort', 'published');
+    url.searchParams.set('direction', 'desc');
+    url.searchParams.set('modified', `>=${since}`);
+
+    const res = await fetch(url, {
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'ClaudeThreatIntelligence/1.0',
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return { success: false, advisories: [], error: `HTTP ${res.status}: ${await res.text()}` };
     const advisories = await res.json();
     return {
       success: true,
@@ -126,12 +166,14 @@ export async function fetchGithubAdvisories() {
         cvss_score: a.cvss?.score,
         cvss_vector: a.cvss?.vector_string,
         published_at: a.published_at,
+        updated_at: a.updated_at,
         url: a.html_url,
+        references: a.references || [],
         affected: (a.vulnerabilities || []).map(v => ({
           package: v.package?.name,
           ecosystem: v.package?.ecosystem,
           vulnerable_version_range: v.vulnerable_version_range,
-          patched_versions: v.patched_versions,
+          patched_versions: v.first_patched_version?.identifier || null,
         })),
       })),
     };
@@ -158,9 +200,13 @@ export async function runAllFeeds(db, log = console.log) {
 
   // Update feed health in DB
   const updateHealth = db.prepare(`
-    INSERT INTO feed_health (feed_id, feed_name, last_checked, last_success, consecutive_failures, is_healthy)
-    VALUES (?, ?, datetime('now'), ?, ?, ?)
+    INSERT INTO feed_health (
+      feed_id, feed_name, last_checked, last_success,
+      consecutive_failures, is_healthy, error_message
+    )
+    VALUES (?, ?, datetime('now'), ?, ?, ?, ?)
     ON CONFLICT(feed_id) DO UPDATE SET
+      feed_name = excluded.feed_name,
       last_checked = datetime('now'),
       last_success = CASE WHEN excluded.is_healthy = 1 THEN datetime('now') ELSE last_success END,
       consecutive_failures = CASE WHEN excluded.is_healthy = 1 THEN 0 ELSE consecutive_failures + 1 END,
@@ -173,7 +219,8 @@ export async function runAllFeeds(db, log = console.log) {
       r.feed.id, r.feed.name,
       r.success ? new Date().toISOString() : null,
       r.success ? 0 : 1,
-      r.success ? 1 : 0
+      r.success ? 1 : 0,
+      r.success ? null : r.error
     );
   }
 

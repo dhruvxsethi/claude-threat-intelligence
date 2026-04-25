@@ -57,11 +57,18 @@ The pipeline switches automatically. No API costs.
      Portal UI (localhost:3000)
 ```
 
+## Data Freshness Model
+
+- The portal scheduler runs the full pipeline hourly by default (`config/settings.yml` → `pipeline.cron_schedule`).
+- Vulnerability APIs run every pipeline cycle. NVD is queried with both `pubStartDate` and `pubEndDate`, paginated, and deduped before model analysis.
+- GitHub Security Advisories are ingested as first-class advisory items and normalized through the same AI extraction path as articles.
+- RSS items are deduped by normalized URL and content hash. New RSS items older than `claude.max_article_age_hours` are marked stale so old backlog does not consume the analysis budget.
+- Fresh RSS items are analyzed newest-first, up to `claude.max_articles_per_run`.
+- Pipeline runs are written to `feed_runs`, and source health is written to `feed_health`.
+
 **"Sync Now" button** — triggers the pipeline immediately from the browser. The portal runs it as a child process and broadcasts a `pipeline_done` event when it's done, causing all connected browsers to reload their data without a page refresh.
 
 **Hourly cron** — runs automatically inside `portal/server.mjs` every hour as long as the portal is running.
-
-**Claude scheduled task** — a separate cloud-based hourly trigger that runs when your laptop is closed or the portal is stopped. It invokes the pipeline directly.
 
 **Ollama** — the pipeline calls Ollama's local API (`http://localhost:11434`) instead of Anthropic's API when `OLLAMA_MODEL` is set. Ollama must be running separately (`ollama serve`).
 

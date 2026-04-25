@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
@@ -31,7 +31,7 @@ step('Checking environment variables...');
 if (!existsSync(join(ROOT, '.env'))) {
   if (existsSync(join(ROOT, '.env.example'))) {
     warn('.env not found — copying from .env.example');
-    const example = require('fs').readFileSync(join(ROOT, '.env.example'), 'utf8');
+    const example = readFileSync(join(ROOT, '.env.example'), 'utf8');
     writeFileSync(join(ROOT, '.env'), example);
   } else {
     writeFileSync(join(ROOT, '.env'), 'ANTHROPIC_API_KEY=\nPORT=3000\nNODE_ENV=development\n');
@@ -41,7 +41,7 @@ if (!existsSync(join(ROOT, '.env'))) {
 
 // Load .env manually
 const envContent = (existsSync(join(ROOT, '.env'))
-  ? require('fs').readFileSync(join(ROOT, '.env'), 'utf8')
+  ? readFileSync(join(ROOT, '.env'), 'utf8')
   : '').split('\n').filter(Boolean);
 for (const line of envContent) {
   const [k, ...v] = line.split('=');
@@ -97,7 +97,6 @@ try {
 // 6. Validate config files
 step('Validating config files...');
 const { default: yaml } = await import('js-yaml');
-const { readFileSync } = await import('fs');
 try {
   const feeds = yaml.load(readFileSync(join(ROOT, 'config/feeds.yml'), 'utf8'));
   ok(`feeds.yml — ${feeds.feeds?.length} feeds configured`);

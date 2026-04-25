@@ -43,6 +43,105 @@ const warn = msg => log(`  ⚠ ${msg}`, 'yellow');
 const err  = msg => log(`  ✗ ${msg}`, 'red');
 const info = msg => log(`  → ${msg}`, 'cyan');
 
+function parseTime(value) {
+  const ts = Date.parse(value || '');
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function newestFirst(a, b) {
+  return (parseTime(b.published_at) || 0) - (parseTime(a.published_at) || 0);
+}
+
+function threatExistsBySourceUrl(db, sourceUrl) {
+  if (!sourceUrl) return false;
+  return !!db.prepare('SELECT 1 FROM threats WHERE source_url = ?').get(sourceUrl);
+}
+
+function markApiFeedHealthy(db, feedId, feedName, success, errorMessage = null) {
+  db.prepare(`
+    INSERT INTO feed_health (
+      feed_id, feed_name, last_checked, last_success,
+      consecutive_failures, is_healthy, error_message
+    ) VALUES (
+      ?, ?, datetime('now'), ?, ?, ?, ?
+    )
+    ON CONFLICT(feed_id) DO UPDATE SET
+      feed_name = excluded.feed_name,
+      last_checked = datetime('now'),
+      last_success = CASE WHEN excluded.is_healthy = 1 THEN datetime('now') ELSE last_success END,
+      consecutive_failures = CASE WHEN excluded.is_healthy = 1 THEN 0 ELSE consecutive_failures + 1 END,
+      is_healthy = excluded.is_healthy,
+      error_message = excluded.error_message
+  `).run(
+    feedId,
+    feedName,
+    success ? new Date().toISOString() : null,
+    success ? 0 : 1,
+    success ? 1 : 0,
+    errorMessage
+  );
+}
+
+function startFeedRun(db, runId, feedId, feedName, slot = 'BOTH') {
+  return db.prepare(`
+    INSERT INTO feed_runs (run_id, feed_id, feed_name, slot, status)
+    VALUES (?, ?, ?, ?, 'running')
+  `).run(runId, feedId, feedName, slot).lastInsertRowid;
+}
+
+function finishFeedRun(db, id, result) {
+  db.prepare(`
+    UPDATE feed_runs SET
+      completed_at = datetime('now'),
+      status = ?,
+      articles_fetched = ?,
+      articles_new = ?,
+      articles_analyzed = ?,
+      threats_created = ?,
+      error_message = ?
+    WHERE id = ?
+  `).run(
+    result.status,
+    result.articles_fetched || 0,
+    result.articles_new || 0,
+    result.articles_analyzed || 0,
+    result.threats_created || 0,
+    result.error_message || null,
+    id
+  );
+}
+
+function githubAdvisoryToArticle(advisory) {
+  const affected = (advisory.affected || []).map(pkg => (
+    `${pkg.ecosystem || 'unknown'}/${pkg.package || 'unknown'} ${pkg.vulnerable_version_range || ''}`.trim()
+  ));
+  const content = [
+    `GitHub Security Advisory: ${advisory.id}`,
+    advisory.cve_id ? `CVE: ${advisory.cve_id}` : null,
+    `Severity: ${advisory.severity || 'unknown'}`,
+    advisory.cvss_score ? `CVSS: ${advisory.cvss_score} ${advisory.cvss_vector || ''}`.trim() : null,
+    advisory.summary,
+    advisory.description,
+    affected.length ? `Affected packages: ${affected.join('; ')}` : null,
+    advisory.references?.length ? `References: ${advisory.references.join('\n')}` : null,
+  ].filter(Boolean).join('\n\n');
+
+  const cveMentions = advisory.cve_id ? [advisory.cve_id] : [];
+  return {
+    url: advisory.url,
+    title: advisory.summary || `${advisory.id}: GitHub Security Advisory`,
+    content,
+    published_at: advisory.published_at || advisory.updated_at || new Date().toISOString(),
+    content_hash: createHash('sha256').update(content).digest('hex'),
+    content_length: content.length,
+    source_name: 'GitHub Security Advisories',
+    cve_mentions: cveMentions,
+    ip_mentions: [],
+    hash_mentions: [],
+    advisory,
+  };
+}
+
 // Notify portal that the pipeline is done (triggers browser SSE refresh)
 async function notifyPortalDone(threats, errors) {
   const port = process.env.PORT || 3000;
@@ -120,10 +219,23 @@ async function saveThreat(db, threat) {
       warn(`saveThreat skipped (duplicate): ${threatRecord.source_url?.slice(0, 60)}`);
       return false;
     }
-    (_cves   || []).forEach(c => { try { insertCve.run(c);   } catch {} });
-    (_iocs   || []).forEach(i => { try { insertIoc.run(i);   } catch {} });
-    (_ttps   || []).forEach(t => { try { insertTtp.run(t);   } catch {} });
-    (_actors || []).forEach(a => { try { insertActor.run(a); } catch {} });
+    const saveChildren = (kind, stmt, records, describe) => {
+      (records || []).forEach(record => {
+        try {
+          const childResult = stmt.run(record);
+          if (childResult.changes === 0) {
+            warn(`${kind} skipped by constraint: ${describe(record)}`);
+          }
+        } catch (e) {
+          warn(`${kind} insert failed: ${e.message} — ${describe(record)}`);
+        }
+      });
+    };
+
+    saveChildren('CVE', insertCve, _cves, c => c.cve_id || threatRecord.source_url);
+    saveChildren('IOC', insertIoc, _iocs, i => `${i.ioc_type}:${i.ioc_value}`);
+    saveChildren('TTP', insertTtp, _ttps, t => t.mitre_id || threatRecord.source_url);
+    saveChildren('actor', insertActor, _actors, a => a.name || threatRecord.source_url);
     return true;
   });
 
@@ -143,10 +255,28 @@ const _incrementFeedContrib = (() => {
 
 async function processArticles(db, items, dedup, correlator, settings) {
   const maxAnalyze = settings.claude.max_articles_per_run;
-  const newItems = dedup.filterNewItems(items);
+  const maxAgeHours = settings.claude.max_article_age_hours || 48;
+  const cutoff = Date.now() - maxAgeHours * 60 * 60 * 1000;
+  const incomingNewItems = dedup.filterNewItems(items);
+  const newItems = [];
+  let stale = 0;
   let analyzed = 0, threats = 0, errors = 0;
 
-  info(`${newItems.length} new articles of ${items.length} total to process`);
+  for (const item of incomingNewItems) {
+    const publishedTs = parseTime(item.published_at);
+    if (publishedTs && publishedTs < cutoff) {
+      dedup.registerArticle(item.url, item.feed_id, item.title, item.published_at, null);
+      dedup.markSkipped(item.url, 'stale_article');
+      stale++;
+      continue;
+    }
+    newItems.push(item);
+  }
+
+  newItems.sort(newestFirst);
+
+  info(`${newItems.length} fresh new articles of ${items.length} total to process`);
+  if (stale > 0) warn(`${stale} new-but-stale articles skipped (older than ${maxAgeHours}h)`);
 
   for (const item of newItems) {
     if (analyzed >= maxAnalyze) {
@@ -241,27 +371,35 @@ async function processArticles(db, items, dedup, correlator, settings) {
     }
   }
 
-  return { analyzed, threats, errors };
+  return { analyzed, threats, errors, newItems: newItems.length, stale };
 }
 
-async function processVulnerabilityApis(db, correlator) {
+async function processVulnerabilityApis(db, correlator, settings) {
   log('\n→ Fetching vulnerability APIs (NVD, CISA KEV, GitHub)...', 'blue');
+  const windowHours = settings.claude.max_article_age_hours || 48;
 
-  const [nvdResult, kevResult] = await Promise.all([
-    fetchNvdCves(),
+  const [nvdResult, kevResult, githubResult] = await Promise.all([
+    fetchNvdCves({ hoursBack: windowHours }),
     fetchCisaKev(),
+    fetchGithubAdvisories({ hoursBack: windowHours }),
   ]);
 
   let threatsCreated = 0;
+  let analyzed = 0;
   const kevIds = new Set((kevResult.vulnerabilities || []).map(v => v.cveID));
+  markApiFeedHealthy(db, 'nvd_cve_api', 'NIST NVD CVE Database', nvdResult.success, nvdResult.error || null);
+  markApiFeedHealthy(db, 'cisa_kev_api', 'CISA Known Exploited Vulnerabilities', kevResult.success, kevResult.error || null);
+  markApiFeedHealthy(db, 'github_security_advisories', 'GitHub Security Advisories', githubResult.success, githubResult.error || null);
 
   // NVD CVEs
   if (nvdResult.success && nvdResult.cves.length > 0) {
-    info(`NVD: ${nvdResult.cves.length} recent CVEs`);
+    info(`NVD: ${nvdResult.cves.length} CVEs published in last ${windowHours}h`);
     for (const cve of nvdResult.cves) {
+      if (threatExistsBySourceUrl(db, cve.source_url)) continue;
       cve.in_kev = kevIds.has(cve.cve_id);
       const analysis = await analyzeNvdCve(cve, kevIds);
       if (!analysis.success) { err(`NVD analysis failed (${cve.cve_id}): ${analysis.error}`); continue; }
+      analyzed++;
       const threat = normalizeCveThreat(analysis.data, cve, analysis.source_url);
       const saved = await saveThreat(db, threat);
       if (saved) {
@@ -273,7 +411,7 @@ async function processVulnerabilityApis(db, correlator) {
       await new Promise(r => setTimeout(r, 200));
     }
   } else if (nvdResult.success) {
-    info('NVD: 0 new CVEs in the last hour');
+    info(`NVD: 0 CVEs published in last ${windowHours}h`);
   } else {
     warn(`NVD fetch failed: ${nvdResult.error}`);
   }
@@ -289,6 +427,7 @@ async function processVulnerabilityApis(db, correlator) {
       }
       const analysis = await analyzeCisaKevEntry(vuln);
       if (!analysis.success) { err(`KEV analysis failed (${vuln.cveID}): ${analysis.error}`); continue; }
+      analyzed++;
       const cve = {
         cve_id:           vuln.cveID,
         cvss_score:       null,
@@ -314,9 +453,65 @@ async function processVulnerabilityApis(db, correlator) {
     }
   } else if (kevResult.success) {
     info('CISA KEV: no new entries this week');
+  } else {
+    warn(`CISA KEV fetch failed: ${kevResult.error}`);
   }
 
-  return threatsCreated;
+  // GitHub Security Advisories
+  if (githubResult.success && githubResult.advisories.length > 0) {
+    info(`GitHub Advisories: ${githubResult.advisories.length} modified/published in last ${windowHours}h`);
+    for (const advisory of githubResult.advisories) {
+      if (threatExistsBySourceUrl(db, advisory.url)) continue;
+
+      const article = githubAdvisoryToArticle(advisory);
+      const analysis = await analyzeArticle(article, 92);
+      if (!analysis.success) {
+        err(`GitHub advisory analysis failed (${advisory.id}): ${analysis.error}`);
+        continue;
+      }
+      analyzed++;
+
+      const threat = normalizeArticleThreat(analysis.data, article, {
+        name: 'GitHub Security Advisories',
+        source_tier: 1,
+        source_credibility: 92,
+        rotation_slot: 'A',
+      });
+
+      if (advisory.cve_id && !threat._cves.some(c => c.cve_id === advisory.cve_id)) {
+        threat._cves.push({
+          threat_id: threat.id,
+          cve_id: advisory.cve_id,
+          cvss_score: advisory.cvss_score || null,
+          cvss_vector: advisory.cvss_vector || null,
+          cvss_severity: advisory.severity || null,
+          description: advisory.description || advisory.summary || '',
+          affected_products: JSON.stringify(advisory.affected || []),
+          patch_available: advisory.affected?.some(a => a.patched_versions) ? 1 : 0,
+          patch_url: advisory.url,
+          in_kev: 0,
+          exploited_in_wild: 0,
+          published_date: advisory.published_at || null,
+        });
+      }
+
+      const saved = await saveThreat(db, threat);
+      if (saved) {
+        correlator.correlate(threat.id);
+        correlator.updateIocIndex(threat._iocs || [], threat.id);
+        _incrementFeedContrib(db, 'github_security_advisories');
+        threatsCreated++;
+        ok(`GitHub: ${advisory.id} — ${threat.title.slice(0, 80)}`);
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+  } else if (githubResult.success) {
+    info(`GitHub Advisories: 0 modified/published in last ${windowHours}h`);
+  } else {
+    warn(`GitHub advisories fetch failed: ${githubResult.error}`);
+  }
+
+  return { threats: threatsCreated, analyzed };
 }
 
 async function run() {
@@ -350,11 +545,14 @@ async function run() {
   const correlator = new Correlator(db);
 
   let totalArticles = 0, totalThreats = 0, totalErrors = 0;
+  let pipelineRunId = null;
 
   try {
-    // 1. Vulnerability APIs (NVD + CISA KEV)
-    const vulnThreats = await processVulnerabilityApis(db, correlator);
-    totalThreats += vulnThreats;
+    pipelineRunId = startFeedRun(db, runId, 'pipeline', 'Full threat intelligence pipeline', 'BOTH');
+
+    // 1. Vulnerability APIs (NVD + CISA KEV + GitHub Advisories)
+    const vulnResult = await processVulnerabilityApis(db, correlator, settings);
+    totalThreats += vulnResult.threats;
 
     // 2. RSS feeds
     const { rssResults } = await runAllFeeds(db, info);
@@ -367,9 +565,17 @@ async function run() {
     );
     totalArticles = allItems.length;
 
-    const { analyzed, threats, errors } = await processArticles(db, allItems, dedup, correlator, settings);
+    const { analyzed, threats, errors, newItems } = await processArticles(db, allItems, dedup, correlator, settings);
     totalThreats += threats;
     totalErrors  += errors;
+    finishFeedRun(db, pipelineRunId, {
+      status: totalErrors > 0 ? 'partial' : 'success',
+      articles_fetched: totalArticles,
+      articles_new: newItems,
+      articles_analyzed: analyzed + vulnResult.analyzed,
+      threats_created: totalThreats,
+      error_message: totalErrors > 0 ? `${totalErrors} article processing errors` : null,
+    });
 
     log(`\n${'─'.repeat(60)}`, 'blue');
     log(`  Run ${runId} complete`, 'green');
@@ -385,6 +591,16 @@ async function run() {
   } catch (e) {
     err(`Fatal pipeline error: ${e.message}`);
     console.error(e);
+    if (pipelineRunId) {
+      try {
+        finishFeedRun(db, pipelineRunId, {
+          status: 'failed',
+          articles_fetched: totalArticles,
+          threats_created: totalThreats,
+          error_message: e.message,
+        });
+      } catch {}
+    }
   } finally {
     db.close();
   }

@@ -540,8 +540,9 @@ function parseThreat(t) {
 // ─── Built-in cron (runs alongside portal) ────────────────────────────────
 
 function schedulePipeline() {
-  // Full scan every 3 hours — all feeds + vulnerability APIs
-  cron.schedule('0 */3 * * *', () => {
+  const schedule = settings.pipeline?.cron_schedule || '0 * * * *';
+  // Full scan on the configured schedule; dedupe keeps repeat runs cheap.
+  cron.schedule(schedule, () => {
     if (_pipelineRunning) {
       console.log('[CRON] Pipeline already running, skipping scheduled run');
       return;
@@ -567,7 +568,7 @@ function schedulePipeline() {
     });
   }, { timezone: 'UTC' });
 
-  console.log('✓ Pipeline scheduled: every 3 hours');
+  console.log(`✓ Pipeline scheduled: ${schedule}`);
 }
 
 // ─── Start ────────────────────────────────────────────────────────────────
@@ -585,5 +586,5 @@ app.listen(PORT, () => {
       ? 'Anthropic Claude'
       : 'NONE — add OLLAMA_MODEL or ANTHROPIC_API_KEY to .env';
   console.log(`  Backend: ${backend}`);
-  console.log(`  Sync:    every 3 hours (0:00, 3:00, 6:00 … UTC)\n`);
+  console.log(`  Sync:    ${settings.pipeline?.cron_schedule || '0 * * * *'} UTC\n`);
 });

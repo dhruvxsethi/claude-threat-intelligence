@@ -18,6 +18,9 @@ claude:
   max_article_age_hours: 48
 
 pipeline:
+  # High-freshness default: lightweight fetch every hour, with URL/content dedupe
+  # preventing repeated analysis of already-seen items.
+  cron_schedule: "0 * * * *"
   # Rotation slots: A runs at 0,6,12,18 UTC | B runs at 3,9,15,21 UTC
   slot_a_hours: [0, 6, 12, 18]
   slot_b_hours: [3, 9, 15, 21]
