@@ -3,6 +3,20 @@ let _data = null;
 let _activeTab = 'overview';
 
 const SECTOR_LABELS = { banking: 'Banking', government: 'Government', healthcare: 'Healthcare' };
+const GAP_LABELS = {
+  not_checked: 'Not checked externally',
+  not_seen_elsewhere: 'Not seen elsewhere',
+  seen_by_us_first: 'Seen by us first',
+  seen_elsewhere: 'Seen elsewhere',
+};
+
+function gapBadge(status) {
+  const cls = status === 'seen_by_us_first' ? 'badge-low'
+    : status === 'not_seen_elsewhere' ? 'badge-medium'
+      : status === 'seen_elsewhere' ? 'badge-unknown'
+        : 'badge-unknown';
+  return `<span class="badge ${cls}">${GAP_LABELS[status] || 'Gap unknown'}</span>`;
+}
 
 async function load() {
   if (!_id) return show404();
@@ -24,6 +38,7 @@ async function load() {
         ${sevBadge(t.severity)}
         <span class="badge badge-unknown">${typeLabel(t.threat_type)}</span>
         ${(t.sectors || []).map(secBadge).join(' ')}
+        ${gapBadge(t.gap_status || 'not_checked')}
         ${t.is_corroborated ? '<span class="badge badge-low">Corroborated</span>' : ''}
       </div>
       <h1 class="d-title">${esc(t.title)}</h1>
@@ -67,6 +82,7 @@ async function load() {
           <button class="d-tab" data-tab="cves" onclick="switchTab('cves')">CVEs${t.cves?.length ? ` <span class="d-tab-count">${t.cves.length}</span>` : ''}</button>
           <button class="d-tab" data-tab="ttps" onclick="switchTab('ttps')">MITRE ATT&CK${t.ttps?.length ? ` <span class="d-tab-count">${t.ttps.length}</span>` : ''}</button>
           <button class="d-tab" data-tab="actors" onclick="switchTab('actors')">Actors${t.actors?.length ? ` <span class="d-tab-count">${t.actors.length}</span>` : ''}</button>
+          <button class="d-tab" data-tab="evidence" onclick="switchTab('evidence')">Evidence${t.evidence?.length ? ` <span class="d-tab-count">${t.evidence.length}</span>` : ''}</button>
         </div>
         <div id="tab-content" class="d-tabcontent"></div>
       </div>
@@ -83,6 +99,8 @@ async function load() {
               ['Ingested',       fmtDate(t.ingested_at)],
               ['Source Tier',    `Tier ${t.source_tier || '?'}`],
               ['Corroborations', t.corroboration_count || 0],
+              ['Gap Status',     GAP_LABELS[t.gap_status] || 'Not checked'],
+              ['External Seen',   t.external_seen_at ? fmtDate(t.external_seen_at) : '—'],
             ].map(([k, v]) => `<div class="meta-row"><span class="meta-key">${k}</span><span class="meta-val">${v}</span></div>`).join('')}
           </div>
         </div>
@@ -239,6 +257,39 @@ function renderTab(name) {
       : '<div class="d-empty">No named actors identified in this report</div>';
 
     el.innerHTML = `<div class="d-block d-section-card"><div class="d-block-title">Threat Actors</div>${rows}</div>`;
+  } else if (name === 'evidence') {
+    const sightings = t.external_sightings || [];
+    const sightingRows = sightings.length
+      ? sightings.map(s => `<div class="evidence-item">
+          <div class="evidence-head">
+            <span class="badge badge-low">${esc(s.provider)}</span>
+            <span class="text-xs text-3">${esc(s.match_type || 'match')} · ${esc(s.match_value || '')}</span>
+          </div>
+          <div class="evidence-body">First seen externally: ${s.first_seen_at ? fmtDate(s.first_seen_at) : '—'}</div>
+        </div>`).join('')
+      : `<div class="d-empty">No OTX/XSIAM sightings imported for this threat yet.</div>`;
+
+    const evidenceRows = t.evidence?.length
+      ? t.evidence.map(e => `<div class="evidence-item">
+          <div class="evidence-head">
+            <span class="badge badge-unknown">${esc((e.evidence_type || '').replace(/_/g, ' '))}</span>
+            <span class="text-xs text-3">${e.observed_at ? fmtDate(e.observed_at) : '—'}</span>
+          </div>
+          <div class="evidence-title">${esc(e.title || 'Evidence')}</div>
+          ${e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noreferrer" class="text-xs" style="color:var(--blue)">Open source</a>` : ''}
+          ${e.body ? `<div class="evidence-body">${esc(e.body)}</div>` : ''}
+        </div>`).join('')
+      : '<div class="d-empty">No evidence records captured for this threat.</div>';
+
+    el.innerHTML = `<div class="d-block d-section-card">
+      <div class="d-block-title">Gap Tracking</div>
+      <div style="margin-bottom:12px">${gapBadge(t.gap_status || 'not_checked')}</div>
+      ${sightingRows}
+    </div>
+    <div class="d-block d-section-card">
+      <div class="d-block-title">Evidence Trail</div>
+      ${evidenceRows}
+    </div>`;
   }
 }
 

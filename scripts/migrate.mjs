@@ -180,6 +180,50 @@ export function migrate(db) {
       PRIMARY KEY (ioc_type, ioc_value)
     );
 
+    -- Evidence trail for why a threat exists and how it was extracted.
+    CREATE TABLE IF NOT EXISTS threat_evidence (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      threat_id TEXT REFERENCES threats(id) ON DELETE CASCADE,
+      evidence_type TEXT CHECK(evidence_type IN (
+        'source_article','extraction','gap_tracking','external_sighting','source_discovery'
+      )) NOT NULL,
+      title TEXT,
+      body TEXT,
+      url TEXT,
+      observed_at TEXT DEFAULT (datetime('now')),
+      metadata TEXT DEFAULT '{}'
+    );
+
+    -- External sightings from OTX, XSIAM, or other comparison systems.
+    CREATE TABLE IF NOT EXISTS external_sightings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      threat_id TEXT REFERENCES threats(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      external_id TEXT,
+      match_type TEXT,
+      match_value TEXT,
+      first_seen_at TEXT,
+      last_seen_at TEXT,
+      imported_at TEXT DEFAULT (datetime('now')),
+      metadata TEXT DEFAULT '{}',
+      UNIQUE(provider, external_id, threat_id)
+    );
+
+    -- Candidate sources discovered by the discovery job, pending review.
+    CREATE TABLE IF NOT EXISTS discovered_sources (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      url TEXT UNIQUE NOT NULL,
+      title TEXT,
+      source_type TEXT DEFAULT 'rss',
+      discovered_from TEXT,
+      confidence INTEGER DEFAULT 50,
+      status TEXT CHECK(status IN ('new','reviewed','rejected','added')) DEFAULT 'new',
+      reason TEXT,
+      discovered_at TEXT DEFAULT (datetime('now')),
+      last_checked TEXT,
+      metadata TEXT DEFAULT '{}'
+    );
+
     -- Indexes for common queries
     CREATE INDEX IF NOT EXISTS idx_threats_severity ON threats(severity);
     CREATE INDEX IF NOT EXISTS idx_threats_ingested ON threats(ingested_at DESC);
@@ -192,9 +236,22 @@ export function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_actors_name ON threat_actors(name);
     CREATE INDEX IF NOT EXISTS idx_articles_url ON articles(url);
     CREATE INDEX IF NOT EXISTS idx_feed_runs_feed ON feed_runs(feed_id, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_evidence_threat ON threat_evidence(threat_id, observed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_external_sightings_threat ON external_sightings(threat_id);
+    CREATE INDEX IF NOT EXISTS idx_discovered_sources_status ON discovered_sources(status, discovered_at DESC);
   `);
 
+  ensureColumn(db, 'threats', 'first_seen_by_us_at', 'TEXT');
+  ensureColumn(db, 'threats', 'external_seen_at', 'TEXT');
+  ensureColumn(db, 'threats', 'gap_status', "TEXT CHECK(gap_status IN ('not_checked','not_seen_elsewhere','seen_by_us_first','seen_elsewhere')) DEFAULT 'not_checked'");
+  ensureColumn(db, 'threats', 'gap_checked_at', 'TEXT');
+
   console.log('✓ Database schema migrated');
+}
+
+function ensureColumn(db, table, column, definition) {
+  const exists = db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === column);
+  if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 // Run directly

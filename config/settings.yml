@@ -61,6 +61,8 @@ feeds:
   health_check_interval: 24
   # How often Claude discovers and suggests new feeds (hours)
   discovery_interval: 168  # weekly
+  # Cron expression for local source discovery suggestions
+  discovery_cron_schedule: "0 2 * * 1"
   # Max feed fetch timeout (ms)
   fetch_timeout: 10000
 

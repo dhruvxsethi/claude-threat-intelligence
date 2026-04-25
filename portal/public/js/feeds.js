@@ -4,6 +4,7 @@ async function loadFeeds() {
   const d = await fetch('/api/feeds').then(r => r.json());
   const feeds  = d.health || [];
   const runs   = d.recentRuns || [];
+  const discovered = d.discoveredSources || [];
 
   const active   = feeds.filter(f => f.enabled !== false);
   const healthy  = active.filter(f => f.is_healthy).length;
@@ -15,6 +16,7 @@ async function loadFeeds() {
   setText('runs-today', runs.filter(r => new Date(r.started_at).toDateString() === today).length);
 
   renderHealth(feeds);
+  renderDiscovered(discovered);
   renderRuns(runs);
 }
 
@@ -113,6 +115,25 @@ function renderRuns(runs) {
       <td class="text-xs text-3">${relTime(r.started_at)}</td>
     </tr>`).join('')}</tbody>
   </table></div>`;
+}
+
+function renderDiscovered(sources) {
+  const el = document.getElementById('discovered-sources');
+  if (!el) return;
+  if (!sources.length) {
+    el.innerHTML = '<div class="text-sm text-3" style="padding:16px">No discovered candidates yet. Run npm run discover:sources.</div>';
+    return;
+  }
+  el.innerHTML = sources.map(s => `<div class="feed-item">
+    <div class="feed-dot ${s.status === 'new' ? 'never' : s.status === 'added' ? 'ok' : 'disabled'}"></div>
+    <div class="feed-info">
+      <div class="feed-name"><a href="${esc(s.url)}" target="_blank" rel="noreferrer">${esc(s.title || s.url)}</a></div>
+      <div class="feed-meta">${esc(s.reason || '')}</div>
+    </div>
+    <span class="feed-count">${s.confidence || 0}%</span>
+    <span class="feed-time">${s.discovered_at ? relTime(s.discovered_at) : '—'}</span>
+    <span class="badge badge-unknown" style="font-size:.6rem">${esc(s.status || 'new')}</span>
+  </div>`).join('');
 }
 
 loadFeeds();

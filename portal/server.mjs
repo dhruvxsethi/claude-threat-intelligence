@@ -130,6 +130,8 @@ app.get('/api/threats/:id', (req, res) => {
   const iocs = db.prepare('SELECT * FROM threat_iocs WHERE threat_id = ? ORDER BY confidence DESC').all(req.params.id);
   const ttps = db.prepare('SELECT * FROM threat_ttps WHERE threat_id = ?').all(req.params.id);
   const actors = db.prepare('SELECT * FROM threat_actors WHERE threat_id = ?').all(req.params.id);
+  let evidence = db.prepare('SELECT * FROM threat_evidence WHERE threat_id = ? ORDER BY observed_at DESC, id DESC').all(req.params.id);
+  const externalSightings = db.prepare('SELECT * FROM external_sightings WHERE threat_id = ? ORDER BY first_seen_at ASC').all(req.params.id);
 
   const relatedIds = JSON.parse(threat.related_threat_ids || '[]');
   const related = relatedIds.length > 0
@@ -137,6 +139,7 @@ app.get('/api/threats/:id', (req, res) => {
     : [];
 
   const parsed = parseThreat(threat);
+  if (!evidence.length) evidence = fallbackEvidence(parsed);
   const parsedActors = actors.map(a => ({ ...a, aliases: JSON.parse(a.aliases || '[]') }));
   const displayActors = parsedActors.length ? parsedActors : deriveActorsFromThreat(parsed);
 
@@ -146,6 +149,8 @@ app.get('/api/threats/:id', (req, res) => {
     iocs,
     ttps,
     actors: displayActors,
+    evidence: evidence.map(e => ({ ...e, metadata: JSON.parse(e.metadata || '{}') })),
+    external_sightings: externalSightings.map(s => ({ ...s, metadata: JSON.parse(s.metadata || '{}') })),
     related,
   });
 });
@@ -280,6 +285,14 @@ app.get('/api/feeds', (req, res) => {
   const recentRuns = db.prepare(`
     SELECT * FROM feed_runs ORDER BY started_at DESC LIMIT 50
   `).all();
+  const discoveredSources = db.prepare(`
+    SELECT * FROM discovered_sources
+    ORDER BY
+      CASE status WHEN 'new' THEN 0 WHEN 'reviewed' THEN 1 WHEN 'added' THEN 2 ELSE 3 END,
+      confidence DESC,
+      discovered_at DESC
+    LIMIT 50
+  `).all();
   const articleStats = Object.fromEntries(db.prepare(`
     SELECT
       feed_id,
@@ -350,12 +363,13 @@ app.get('/api/feeds', (req, res) => {
     }));
   } catch {}
 
-  res.json({ health: [...annotated, ...feedsConfig], recentRuns });
+  res.json({ health: [...annotated, ...feedsConfig], recentRuns, discoveredSources });
 });
 
 // ─── Trigger pipeline run manually ────────────────────────────────────────
 
 let _pipelineRunning = false;
+let _discoveryRunning = false;
 
 app.post('/api/pipeline/run', (req, res) => {
   if (_pipelineRunning) {
@@ -601,6 +615,37 @@ function parseThreat(t) {
   };
 }
 
+function fallbackEvidence(threat) {
+  return [
+    {
+      id: null,
+      threat_id: threat.id,
+      evidence_type: 'source_article',
+      title: threat.source_name || 'Source article',
+      body: threat.summary || '',
+      url: threat.source_url,
+      observed_at: threat.published_at || threat.ingested_at,
+      metadata: JSON.stringify({
+        generated_from_existing_record: true,
+        content_length: threat.content_length || 0,
+        raw_content_hash: threat.raw_content_hash || null,
+      }),
+    },
+    {
+      id: null,
+      threat_id: threat.id,
+      evidence_type: 'gap_tracking',
+      title: 'Gap tracking status',
+      body: threat.gap_status === 'seen_elsewhere'
+        ? 'This threat has at least one imported external sighting.'
+        : 'No matching OTX/XSIAM sighting has been imported for this threat yet.',
+      url: threat.source_url,
+      observed_at: threat.gap_checked_at || threat.ingested_at,
+      metadata: JSON.stringify({ status: threat.gap_status || 'not_checked' }),
+    },
+  ];
+}
+
 const NAMED_ACTOR_PATTERNS = [
   { re: /\bAPT ?28\b/i, name: 'APT28', origin_country: 'Russia', motivation: 'espionage', sophistication: 'nation_state' },
   { re: /\bAPT ?29\b/i, name: 'APT29', origin_country: 'Russia', motivation: 'espionage', sophistication: 'nation_state' },
@@ -755,10 +800,33 @@ function schedulePipeline() {
   console.log(`✓ Pipeline scheduled: ${schedule}`);
 }
 
+function scheduleSourceDiscovery() {
+  const schedule = settings.feeds?.discovery_cron_schedule || '0 2 * * 1';
+  cron.schedule(schedule, () => {
+    if (_discoveryRunning) {
+      console.log('[CRON] Source discovery already running, skipping');
+      return;
+    }
+    console.log('[CRON] Starting source discovery...');
+    _discoveryRunning = true;
+    const child = spawn('node', ['scripts/discover-sources.mjs'], {
+      cwd: ROOT,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    child.stdout.on('data', d => process.stdout.write(d));
+    child.stderr.on('data', d => process.stderr.write(d));
+    child.on('close', () => { _discoveryRunning = false; });
+  }, { timezone: 'UTC' });
+
+  console.log(`✓ Source discovery scheduled: ${schedule}`);
+}
+
 // ─── Start ────────────────────────────────────────────────────────────────
 
 ensureDb();
 schedulePipeline();
+scheduleSourceDiscovery();
 
 app.listen(PORT, () => {
   console.log(`\n  Radar — Threat Intelligence`);

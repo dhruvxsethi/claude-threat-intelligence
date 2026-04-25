@@ -49,6 +49,10 @@ export function normalizeArticleThreat(analysisData, article, feedMeta) {
     corroboration_count: 0,
     related_threat_ids: JSON.stringify([]),
     slot: feedMeta?.rotation_slot || 'B',
+    first_seen_by_us_at: new Date().toISOString(),
+    external_seen_at: null,
+    gap_status: 'not_seen_elsewhere',
+    gap_checked_at: null,
     // Relational data (stored separately)
     _cves: normalizeCves(analysisData.cves || [], id),
     _iocs: normalizeIocs(adjustedIocs || [], id),
@@ -90,6 +94,10 @@ export function normalizeCveThreat(analysisData, cve, sourceUrl) {
     corroboration_count: 0,
     related_threat_ids: JSON.stringify([]),
     slot: 'A',
+    first_seen_by_us_at: new Date().toISOString(),
+    external_seen_at: null,
+    gap_status: 'not_seen_elsewhere',
+    gap_checked_at: null,
     _cves: [{
       threat_id: id,
       cve_id: cve.cve_id,

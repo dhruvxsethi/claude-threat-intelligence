@@ -9,7 +9,9 @@
     "doctor": "node scripts/doctor.mjs",
     "start": "node portal/server.mjs",
     "ingest": "node scripts/run-pipeline.mjs",
-    "migrate": "node scripts/migrate.mjs"
+    "migrate": "node scripts/migrate.mjs",
+    "discover:sources": "node scripts/discover-sources.mjs",
+    "import:sightings": "node scripts/import-external-sightings.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",

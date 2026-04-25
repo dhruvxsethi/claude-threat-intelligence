@@ -66,6 +66,29 @@ The pipeline switches automatically. No API costs.
 - Fresh RSS items are analyzed newest-first, up to `claude.max_articles_per_run`.
 - Pipeline runs are written to `feed_runs`, and source health is written to `feed_health`.
 
+## Gap Tracking & Evidence
+
+- Every newly saved threat gets an evidence trail: source article/advisory, extraction summary, extraction time, and initial gap status.
+- Gap status starts as `not_seen_elsewhere`. Import OTX/XSIAM sightings later to mark threats as `seen_elsewhere` or `seen_by_us_first`.
+- Import external sightings with:
+
+```bash
+npm run import:sightings -- sightings.json
+```
+
+Expected JSON fields include `provider`, `external_id`, `first_seen_at`, `url`, `cve_id`, `ioc_type`, and `ioc_value`. Matching is done by URL, CVE, or IOC.
+- Threat detail pages include an Evidence tab showing source material, extraction evidence, external sightings, and gap status.
+
+## Source Discovery
+
+Source discovery suggests candidate RSS/Atom feeds and stores them for review in the Feed Health page. It does not automatically edit `config/feeds.yml`.
+
+```bash
+npm run discover:sources
+```
+
+The portal also schedules discovery weekly by default (`feeds.discovery_cron_schedule`).
+
 **"Sync Now" button** — triggers the pipeline immediately from the browser. The portal runs it as a child process and broadcasts a `pipeline_done` event when it's done, causing all connected browsers to reload their data without a page refresh.
 
 **Hourly cron** — runs automatically inside `portal/server.mjs` every hour as long as the portal is running.

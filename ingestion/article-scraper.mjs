@@ -22,7 +22,64 @@ const NOISE_SELECTORS = [
   '.sidebar', '.advertisement', '.ads', '.social-share',
   '.related-posts', '.newsletter', '.comments', '#comments',
   '.cookie-banner', '.popup', 'iframe', 'form',
+  '[aria-label="breadcrumb"]', '.breadcrumb', '.breadcrumbs',
 ];
+
+function cleanText(text) {
+  return (text || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function extractJsonLdArticle($) {
+  const candidates = [];
+  $('script[type="application/ld+json"]').each((_, el) => {
+    const raw = $(el).contents().text();
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      const nodes = Array.isArray(parsed) ? parsed : [parsed, ...(parsed['@graph'] || [])];
+      for (const node of nodes.flat()) {
+        const type = node?.['@type'];
+        const types = Array.isArray(type) ? type : [type];
+        if (types.some(t => ['Article', 'NewsArticle', 'BlogPosting', 'Report'].includes(t))) {
+          candidates.push({
+            headline: node.headline,
+            description: node.description,
+            articleBody: node.articleBody,
+            datePublished: node.datePublished,
+            author: Array.isArray(node.author) ? node.author.map(a => a.name).filter(Boolean).join(', ') : node.author?.name,
+          });
+        }
+      }
+    } catch {}
+  });
+  return candidates.find(c => c.articleBody || c.description || c.headline) || null;
+}
+
+function bestParagraphText($) {
+  const paragraphs = [];
+  $('p, li').each((_, el) => {
+    const text = cleanText($(el).text());
+    if (text.length >= 60) paragraphs.push(text);
+  });
+  return paragraphs.join('\n\n');
+}
+
+function detectAccessLimit($, rawText) {
+  const text = rawText.toLowerCase();
+  const patterns = [
+    'enable javascript',
+    'subscribe to continue',
+    'sign in to continue',
+    'already a subscriber',
+    'paywall',
+    'access denied',
+    'verify you are human',
+  ];
+  return patterns.find(p => text.includes(p)) || null;
+}
 
 export async function fetchArticle(url, timeoutMs = 15000) {
   try {
@@ -58,6 +115,7 @@ export async function fetchArticle(url, timeoutMs = 15000) {
 
 export function extractContent(html, url) {
   const $ = cheerio.load(html);
+  const jsonLd = extractJsonLdArticle($);
 
   // Remove noise elements
   NOISE_SELECTORS.forEach(sel => $(sel).remove());
@@ -75,23 +133,29 @@ export function extractContent(html, url) {
   // Fallback to body
   if (!contentEl) contentEl = $('body');
 
-  const rawText = contentEl.text()
-    .replace(/\s+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  let rawText = cleanText(contentEl.text());
+  const paragraphText = bestParagraphText($);
+  if (paragraphText.length > rawText.length * 1.2) rawText = paragraphText;
+  if (jsonLd?.articleBody && jsonLd.articleBody.length > rawText.length) rawText = cleanText(jsonLd.articleBody);
 
   // Extract metadata
-  const title = $('meta[property="og:title"]').attr('content') ||
+  const title = jsonLd?.headline ||
+    $('meta[property="og:title"]').attr('content') ||
     $('title').text() || '';
 
-  const description = $('meta[property="og:description"]').attr('content') ||
+  const description = jsonLd?.description ||
+    $('meta[property="og:description"]').attr('content') ||
     $('meta[name="description"]').attr('content') || '';
 
-  const publishedAt = $('meta[property="article:published_time"]').attr('content') ||
+  const publishedAt = jsonLd?.datePublished ||
+    $('meta[property="article:published_time"]').attr('content') ||
     $('time[datetime]').first().attr('datetime') ||
+    $('meta[name="date"]').attr('content') ||
+    $('meta[name="publish-date"]').attr('content') ||
     $('meta[name="pubdate"]').attr('content') || null;
 
-  const author = $('meta[name="author"]').attr('content') ||
+  const author = jsonLd?.author ||
+    $('meta[name="author"]').attr('content') ||
     $('[rel="author"]').first().text() ||
     $('.author').first().text() || null;
 
@@ -126,6 +190,8 @@ export function extractContent(html, url) {
     published_at: publishedAt,
     author: author?.trim(),
     links: links.slice(0, 50),
+    access_limit: detectAccessLimit($, rawText),
+    extraction_method: jsonLd?.articleBody ? 'jsonld_article_body' : (paragraphText.length > 0 ? 'html_paragraphs' : 'html_main_selector'),
     cve_mentions: cveMatches,
     ip_mentions: ipMatches.slice(0, 20),
     hash_mentions: hashMatches.slice(0, 20),
@@ -155,7 +221,11 @@ export async function scrapeArticle(url, cacheEnabled = true) {
   const extracted = extractContent(html, finalUrl || url);
 
   if (extracted.content_length < 200) {
-    return { success: false, error: 'Content too short (paywall or bot block)' };
+    return {
+      success: false,
+      error: extracted.access_limit ? `Access limited: ${extracted.access_limit}` : 'Content too short (paywall or bot block)',
+      ...extracted,
+    };
   }
 
   const result = { success: true, url: finalUrl || url, ...extracted };

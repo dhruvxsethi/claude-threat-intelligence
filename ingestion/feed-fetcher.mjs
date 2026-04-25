@@ -64,7 +64,7 @@ export async function fetchRssFeed(feed) {
     const items = (result.items || []).slice(0, 30).map(item => ({
       url: item.link || item.guid,
       title: item.title || '',
-      description: item.description || item.contentSnippet || '',
+      description: item['content:encoded'] || item.content || item.description || item.contentSnippet || '',
       published_at: item.pubDate || item.isoDate || new Date().toISOString(),
       feed_id: feed.id,
       feed_name: feed.name,

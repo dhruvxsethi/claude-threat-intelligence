@@ -142,6 +142,57 @@ function githubAdvisoryToArticle(advisory) {
   };
 }
 
+function evidenceFromArticle(article, analysisData, sourceKind = 'article') {
+  const excerpt = (article.content || '').replace(/\s+/g, ' ').slice(0, 1200);
+  return [
+    {
+      evidence_type: 'source_article',
+      title: article.title || 'Source article',
+      body: excerpt,
+      url: article.url,
+      observed_at: article.published_at || new Date().toISOString(),
+      metadata: {
+        source_name: article.source_name || 'Unknown',
+        source_kind: sourceKind,
+        content_length: article.content_length || 0,
+        content_hash: article.content_hash || null,
+        cve_mentions: article.cve_mentions || [],
+        ip_mentions: article.ip_mentions || [],
+        hash_mentions: article.hash_mentions || [],
+      },
+    },
+    {
+      evidence_type: 'extraction',
+      title: 'AI extraction rationale',
+      body: analysisData.confidence_notes || analysisData.summary || '',
+      url: article.url,
+      observed_at: new Date().toISOString(),
+      metadata: {
+        severity: analysisData.severity || 'unknown',
+        threat_type: analysisData.threat_type || 'other',
+        sectors: analysisData.sectors || [],
+        extracted_counts: {
+          cves: analysisData.cves?.length || 0,
+          iocs: analysisData.iocs?.length || 0,
+          ttps: analysisData.ttps?.length || 0,
+          actors: analysisData.threat_actors?.length || 0,
+        },
+      },
+    },
+    {
+      evidence_type: 'gap_tracking',
+      title: 'Gap tracking status',
+      body: 'No matching OTX/XSIAM sighting has been imported for this threat yet.',
+      url: article.url,
+      observed_at: new Date().toISOString(),
+      metadata: {
+        status: 'not_seen_elsewhere',
+        reason: 'local_ingestion_precedes_external_sighting_import',
+      },
+    },
+  ];
+}
+
 // Notify portal that the pipeline is done (triggers browser SSE refresh)
 async function notifyPortalDone(threats, errors) {
   const port = process.env.PORT || 3000;
@@ -165,14 +216,16 @@ async function saveThreat(db, threat) {
       published_at, ingested_at, analyzed_at, sector_impact,
       sectors, geography, malware_families, affected_products,
       raw_content_hash, content_length, is_corroborated,
-      corroboration_count, related_threat_ids, slot
+      corroboration_count, related_threat_ids, slot,
+      first_seen_by_us_at, external_seen_at, gap_status, gap_checked_at
     ) VALUES (
       @id, @title, @summary, @severity, @threat_type, @kill_chain_stage,
       @credibility_score, @source_url, @source_name, @source_tier,
       @published_at, @ingested_at, @analyzed_at, @sector_impact,
       @sectors, @geography, @malware_families, @affected_products,
       @raw_content_hash, @content_length, @is_corroborated,
-      @corroboration_count, @related_threat_ids, @slot
+      @corroboration_count, @related_threat_ids, @slot,
+      @first_seen_by_us_at, @external_seen_at, @gap_status, @gap_checked_at
     )
   `);
 
@@ -206,8 +259,16 @@ async function saveThreat(db, threat) {
     ) VALUES (@threat_id, @name, @aliases, @origin_country, @motivation, @sophistication, @active_since, @description)
   `);
 
+  const insertEvidence = db.prepare(`
+    INSERT INTO threat_evidence (
+      threat_id, evidence_type, title, body, url, observed_at, metadata
+    ) VALUES (
+      @threat_id, @evidence_type, @title, @body, @url, @observed_at, @metadata
+    )
+  `);
+
   const saveAll = db.transaction(() => {
-    const { _cves, _iocs, _ttps, _actors, ...threatRecord } = threat;
+    const { _cves, _iocs, _ttps, _actors, _evidence, ...threatRecord } = threat;
     let result;
     try {
       result = insert.run(threatRecord);
@@ -236,6 +297,15 @@ async function saveThreat(db, threat) {
     saveChildren('IOC', insertIoc, _iocs, i => `${i.ioc_type}:${i.ioc_value}`);
     saveChildren('TTP', insertTtp, _ttps, t => t.mitre_id || threatRecord.source_url);
     saveChildren('actor', insertActor, _actors, a => a.name || threatRecord.source_url);
+    saveChildren('evidence', insertEvidence, (_evidence || []).map(e => ({
+      threat_id: threatRecord.id,
+      evidence_type: e.evidence_type,
+      title: e.title || null,
+      body: e.body || null,
+      url: e.url || threatRecord.source_url || null,
+      observed_at: e.observed_at || new Date().toISOString(),
+      metadata: JSON.stringify(e.metadata || {}),
+    })), e => e.title || e.evidence_type);
     return true;
   });
 
@@ -351,6 +421,7 @@ async function processArticles(db, items, dedup, correlator, settings) {
         source_credibility:item.source_credibility,
         rotation_slot:     'BOTH',
       });
+      threat._evidence = evidenceFromArticle(articleForAnalysis, analysis.data, 'rss_article');
 
       const saved = await saveThreat(db, threat);
       if (saved) {
@@ -401,6 +472,15 @@ async function processVulnerabilityApis(db, correlator, settings) {
       if (!analysis.success) { err(`NVD analysis failed (${cve.cve_id}): ${analysis.error}`); continue; }
       analyzed++;
       const threat = normalizeCveThreat(analysis.data, cve, analysis.source_url);
+      threat._evidence = evidenceFromArticle({
+        url: cve.source_url,
+        title: cve.cve_id,
+        content: cve.description,
+        published_at: cve.published_date,
+        content_length: cve.description?.length || 0,
+        source_name: 'NIST NVD',
+        cve_mentions: [cve.cve_id],
+      }, analysis.data, 'nvd_cve');
       const saved = await saveThreat(db, threat);
       if (saved) {
         correlator.correlate(threat.id);
@@ -442,6 +522,15 @@ async function processVulnerabilityApis(db, correlator, settings) {
       const kevSourceUrl = `https://nvd.nist.gov/vuln/detail/${vuln.cveID}`;
       const threat = normalizeCveThreat(analysis.data, cve, kevSourceUrl);
       threat.credibility_score = 95;
+      threat._evidence = evidenceFromArticle({
+        url: kevSourceUrl,
+        title: vuln.vulnerabilityName || vuln.cveID,
+        content: `${vuln.shortDescription || ''}\n${vuln.requiredAction || ''}`,
+        published_at: vuln.dateAdded,
+        content_length: (vuln.shortDescription || '').length,
+        source_name: 'CISA Known Exploited Vulnerabilities',
+        cve_mentions: [vuln.cveID],
+      }, analysis.data, 'cisa_kev');
       const saved = await saveThreat(db, threat);
       if (saved) {
         correlator.correlate(threat.id);
@@ -477,6 +566,7 @@ async function processVulnerabilityApis(db, correlator, settings) {
         source_credibility: 92,
         rotation_slot: 'A',
       });
+      threat._evidence = evidenceFromArticle(article, analysis.data, 'github_advisory');
 
       if (advisory.cve_id && !threat._cves.some(c => c.cve_id === advisory.cve_id)) {
         threat._cves.push({
