@@ -136,12 +136,16 @@ app.get('/api/threats/:id', (req, res) => {
     ? db.prepare(`SELECT id, title, severity, threat_type, ingested_at, credibility_score FROM threats WHERE id IN (${relatedIds.map(() => '?').join(',')})`).all(...relatedIds)
     : [];
 
+  const parsed = parseThreat(threat);
+  const parsedActors = actors.map(a => ({ ...a, aliases: JSON.parse(a.aliases || '[]') }));
+  const displayActors = parsedActors.length ? parsedActors : deriveActorsFromThreat(parsed);
+
   res.json({
-    ...parseThreat(threat),
+    ...parsed,
     cves: cves.map(c => ({ ...c, affected_products: JSON.parse(c.affected_products || '[]') })),
     iocs,
     ttps,
-    actors: actors.map(a => ({ ...a, aliases: JSON.parse(a.aliases || '[]') })),
+    actors: displayActors,
     related,
   });
 });
@@ -461,8 +465,7 @@ app.get('/api/actors', (req, res) => {
     actorThreats[actor.name] = threats;
   }
 
-  res.json({
-    actors: actors.map(a => ({
+  let actorRows = actors.map(a => ({
       ...a,
       aliases: [...new Set((a.aliases_raw || '').split(',').flatMap(s => {
         try { return JSON.parse(s); } catch { return []; }
@@ -473,12 +476,25 @@ app.get('/api/actors', (req, res) => {
       }).filter(Boolean))],
       threat_ids: (a.threat_ids_raw || '').split(',').filter(Boolean),
       recent_threats: actorThreats[a.name] || [],
-    })),
+    }));
+
+  if (!actorRows.length) {
+    const threatRows = db.prepare(`
+      SELECT id, title, summary, severity, source_name, ingested_at, published_at,
+             sectors, geography, threat_type, malware_families
+      FROM threats WHERE ingested_at >= ?
+      ORDER BY ingested_at DESC LIMIT 200
+    `).all(cutoff).map(parseThreat);
+    actorRows = aggregateDerivedActors(threatRows);
+  }
+
+  res.json({
+    actors: actorRows,
     summary: {
-      total_actors: actors.length,
-      by_motivation,
-      by_sophistication,
-      by_country,
+      total_actors: actorRows.length,
+      by_motivation: by_motivation.length ? by_motivation : summarizeActorField(actorRows, 'motivation'),
+      by_sophistication: by_sophistication.length ? by_sophistication : summarizeActorField(actorRows, 'sophistication'),
+      by_country: by_country.length ? by_country : summarizeActorCountries(actorRows),
     },
   });
 });
@@ -520,7 +536,16 @@ app.get('/api/search', (req, res) => {
     GROUP BY ta.name ORDER BY seen_in DESC LIMIT 10
   `).all(cutoff, term);
 
-  res.json({ threats, cves, iocs, actors });
+  const derivedActors = actors.length ? [] : aggregateDerivedActors(
+    db.prepare(`
+      SELECT id, title, summary, severity, source_name, ingested_at, published_at,
+             sectors, geography, threat_type, malware_families
+      FROM threats WHERE ingested_at >= ? AND (title LIKE ? OR summary LIKE ?)
+      ORDER BY ingested_at DESC LIMIT 50
+    `).all(cutoff, term, term).map(parseThreat)
+  ).filter(a => a.name.toLowerCase().includes(String(q).toLowerCase())).slice(0, 10);
+
+  res.json({ threats, cves, iocs, actors: actors.length ? actors : derivedActors });
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -535,6 +560,126 @@ function parseThreat(t) {
     sector_impact: JSON.parse(t.sector_impact || '{}'),
     related_threat_ids: JSON.parse(t.related_threat_ids || '[]'),
   };
+}
+
+const NAMED_ACTOR_PATTERNS = [
+  { re: /\bAPT ?28\b/i, name: 'APT28', origin_country: 'Russia', motivation: 'espionage', sophistication: 'nation_state' },
+  { re: /\bAPT ?29\b/i, name: 'APT29', origin_country: 'Russia', motivation: 'espionage', sophistication: 'nation_state' },
+  { re: /\bAPT ?41\b/i, name: 'APT41', origin_country: 'China', motivation: 'espionage', sophistication: 'nation_state' },
+  { re: /\bAPT ?42\b/i, name: 'APT42', origin_country: 'Iran', motivation: 'espionage', sophistication: 'nation_state' },
+  { re: /\bLazarus\b/i, name: 'Lazarus Group', origin_country: 'North Korea', motivation: 'financial', sophistication: 'nation_state' },
+  { re: /\bKimsuky\b/i, name: 'Kimsuky', origin_country: 'North Korea', motivation: 'espionage', sophistication: 'nation_state' },
+  { re: /\bSandworm\b/i, name: 'Sandworm', origin_country: 'Russia', motivation: 'sabotage', sophistication: 'nation_state' },
+  { re: /\bFIN7\b/i, name: 'FIN7', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
+  { re: /\bScattered Spider\b/i, name: 'Scattered Spider', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
+  { re: /\bLockBit\b/i, name: 'LockBit', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
+  { re: /\bCl0?p\b/i, name: 'Clop', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
+  { re: /\bBlackCat\b|\bALPHV\b/i, name: 'ALPHV/BlackCat', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
+];
+
+const COUNTRY_ACTOR_PATTERNS = [
+  { re: /\bChina(?:-linked|-backed|-nexus)?\b|\bChinese state-sponsored\b/i, name: 'China-linked activity', origin_country: 'China' },
+  { re: /\bRussia(?:n)?(?:-linked|-backed|-nexus)?\b|\bRussian state-sponsored\b/i, name: 'Russia-linked activity', origin_country: 'Russia' },
+  { re: /\bNorth Korea(?:n)?(?:-linked|-backed|-nexus)?\b|\bDPRK(?:-linked|-backed|-nexus)?\b/i, name: 'North Korea-linked activity', origin_country: 'North Korea' },
+  { re: /\bIran(?:ian)?(?:-linked|-backed|-nexus)?\b|\bIranian state-sponsored\b/i, name: 'Iran-linked activity', origin_country: 'Iran' },
+];
+
+function deriveActorsFromThreat(threat) {
+  const text = `${threat.title || ''}\n${threat.summary || ''}`.trim();
+  if (!text) return [];
+
+  const actors = [];
+  for (const pattern of NAMED_ACTOR_PATTERNS) {
+    if (pattern.re.test(text)) {
+      actors.push({
+        name: pattern.name,
+        aliases: [],
+        origin_country: pattern.origin_country,
+        motivation: pattern.motivation,
+        sophistication: pattern.sophistication,
+        active_since: null,
+        description: `Derived from explicit source text in "${threat.title}".`,
+        derived: true,
+      });
+    }
+  }
+
+  if (actors.length === 0 && /state-sponsored|nation-state|apt|espionage/i.test(text)) {
+    for (const pattern of COUNTRY_ACTOR_PATTERNS) {
+      if (pattern.re.test(text)) {
+        actors.push({
+          name: pattern.name,
+          aliases: [],
+          origin_country: pattern.origin_country,
+          motivation: 'espionage',
+          sophistication: 'nation_state',
+          active_since: null,
+          description: `Derived from explicit country-linked activity in "${threat.title}".`,
+          derived: true,
+        });
+      }
+    }
+  }
+
+  return actors;
+}
+
+function aggregateDerivedActors(threats) {
+  const byName = new Map();
+  for (const threat of threats) {
+    for (const actor of deriveActorsFromThreat(threat)) {
+      if (!byName.has(actor.name)) {
+        byName.set(actor.name, {
+          ...actor,
+          threat_count: 0,
+          first_seen: threat.ingested_at,
+          last_seen: threat.ingested_at,
+          severities: [],
+          sectors: [],
+          threat_ids: [],
+          recent_threats: [],
+        });
+      }
+      const row = byName.get(actor.name);
+      row.threat_count += 1;
+      row.first_seen = row.first_seen && row.first_seen < threat.ingested_at ? row.first_seen : threat.ingested_at;
+      row.last_seen = row.last_seen && row.last_seen > threat.ingested_at ? row.last_seen : threat.ingested_at;
+      row.severities.push(threat.severity);
+      row.sectors.push(...(threat.sectors || []));
+      row.threat_ids.push(threat.id);
+      if (row.recent_threats.length < 5) {
+        row.recent_threats.push({
+          id: threat.id,
+          title: threat.title,
+          severity: threat.severity,
+          ingested_at: threat.ingested_at,
+          source_name: threat.source_name,
+          credibility_score: threat.credibility_score,
+        });
+      }
+    }
+  }
+
+  return [...byName.values()].map(actor => ({
+    ...actor,
+    severities: [...new Set(actor.severities.filter(Boolean))],
+    sectors: [...new Set(actor.sectors.filter(Boolean))],
+    threat_ids: [...new Set(actor.threat_ids)],
+  })).sort((a, b) => b.threat_count - a.threat_count || String(b.last_seen).localeCompare(String(a.last_seen)));
+}
+
+function summarizeActorField(actors, field) {
+  const counts = new Map();
+  for (const actor of actors) counts.set(actor[field] || 'unknown', (counts.get(actor[field] || 'unknown') || 0) + 1);
+  return [...counts.entries()].map(([key, cnt]) => ({ [field]: key, cnt })).sort((a, b) => b.cnt - a.cnt);
+}
+
+function summarizeActorCountries(actors) {
+  const counts = new Map();
+  for (const actor of actors) {
+    if (actor.origin_country) counts.set(actor.origin_country, (counts.get(actor.origin_country) || 0) + 1);
+  }
+  return [...counts.entries()].map(([origin_country, cnt]) => ({ origin_country, cnt })).sort((a, b) => b.cnt - a.cnt);
 }
 
 // ─── Built-in cron (runs alongside portal) ────────────────────────────────

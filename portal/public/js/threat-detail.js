@@ -73,9 +73,9 @@ async function load() {
 
       <!-- Sidebar (right) -->
       <div class="d-sidebar">
-        <div class="card mb-3">
+        <div class="card d-side-card mb-3">
           <div class="card-head"><div class="card-title">Metadata</div></div>
-          <div style="padding:4px 0">
+          <div class="d-meta-list">
             ${[
               ['Kill Chain',     t.kill_chain_stage || '—'],
               ['Geography',      (t.geography || []).join(', ') || '—'],
@@ -141,15 +141,15 @@ function renderTab(name) {
     ).join('');
 
     el.innerHTML = `
-      <div class="d-block">
+      <div class="d-block d-section-card">
         <div class="d-block-title">Sector Impact</div>
         <div class="impact-grid">${sImpact}</div>
       </div>
-      ${products ? `<div class="d-block">
+      ${products ? `<div class="d-block d-section-card">
         <div class="d-block-title">Affected Products</div>
         <div class="d-products">${products}</div>
       </div>` : ''}
-      ${malware ? `<div class="d-block">
+      ${malware ? `<div class="d-block d-section-card">
         <div class="d-block-title">Malware Families</div>
         <div style="margin-top:8px">${malware}</div>
       </div>` : ''}`;
@@ -165,7 +165,7 @@ function renderTab(name) {
         </div>`).join('')
       : '<div class="d-empty">No IOCs extracted</div>';
 
-    el.innerHTML = `<div class="d-block">
+    el.innerHTML = `<div class="d-block d-section-card">
       <div class="d-block-title" style="display:flex;align-items:center;justify-content:space-between">
         <span>Indicators of Compromise</span>
         ${t.iocs?.length ? `<button class="btn btn-ghost" style="padding:2px 10px;font-size:.65rem" onclick="exportIocs()">Export CSV</button>` : ''}
@@ -192,7 +192,7 @@ function renderTab(name) {
         }).join('')
       : '<div class="d-empty">No CVEs identified</div>';
 
-    el.innerHTML = `<div class="d-block"><div class="d-block-title">Vulnerabilities</div>${rows}</div>`;
+    el.innerHTML = `<div class="d-block d-section-card"><div class="d-block-title">Vulnerabilities</div>${rows}</div>`;
 
   } else if (name === 'ttps') {
     const rows = t.ttps?.length
@@ -206,7 +206,7 @@ function renderTab(name) {
         </div>`).join('')
       : '<div class="d-empty">No TTPs mapped</div>';
 
-    el.innerHTML = `<div class="d-block"><div class="d-block-title">MITRE ATT&CK Techniques</div>${rows}</div>`;
+    el.innerHTML = `<div class="d-block d-section-card"><div class="d-block-title">MITRE ATT&CK Techniques</div>${rows}</div>`;
 
   } else if (name === 'actors') {
     const MOTIV_COLOR = {
@@ -221,7 +221,7 @@ function renderTab(name) {
       ? t.actors.filter(a => a.name?.trim()).map(a => {
           const motivColor = MOTIV_COLOR[a.motivation] || '#4a5568';
           const sophLabel  = SOPH_LABEL[a.sophistication] || a.sophistication || 'Unknown';
-          return `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:10px">
+          return `<div class="d-actor-card">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
               <div style="font-size:.82rem;font-weight:700;color:var(--text)">${esc(a.name)}</div>
               <span style="font-size:.58rem;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em;background:${motivColor}22;color:${motivColor};border:1px solid ${motivColor}44;white-space:nowrap">${esc(a.motivation||'unknown')}</span>
@@ -232,12 +232,13 @@ function renderTab(name) {
             </div>
             ${a.aliases?.length ? `<div class="text-xs text-3" style="margin-bottom:6px">aka: ${a.aliases.join(', ')}</div>` : ''}
             ${a.description ? `<div class="text-xs text-2" style="line-height:1.55">${esc(a.description)}</div>` : ''}
+            ${a.derived ? '<div class="text-xs text-3" style="margin-top:8px">Derived from explicit source wording</div>' : ''}
             <div style="margin-top:8px"><a href="/actors.html" class="text-xs" style="color:var(--blue)">View actor profile →</a></div>
           </div>`;
         }).join('')
       : '<div class="d-empty">No named actors identified in this report</div>';
 
-    el.innerHTML = `<div class="d-block"><div class="d-block-title">Threat Actors</div>${rows}</div>`;
+    el.innerHTML = `<div class="d-block d-section-card"><div class="d-block-title">Threat Actors</div>${rows}</div>`;
   }
 }
 

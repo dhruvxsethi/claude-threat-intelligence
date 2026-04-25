@@ -226,10 +226,10 @@ function setSoph(btn, val) {
   renderGrid();
 }
 
-let _st;
+let _actorSearchTimer;
 function searchActors(q) {
-  clearTimeout(_st);
-  _st = setTimeout(function() { _search = q; loadActors(); }, 300);
+  clearTimeout(_actorSearchTimer);
+  _actorSearchTimer = setTimeout(function() { _search = q; loadActors(); }, 300);
 }
 
 loadActors();
