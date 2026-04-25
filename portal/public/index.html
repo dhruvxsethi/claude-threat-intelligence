@@ -18,6 +18,7 @@
   <div class="navbar-links">
     <a href="/" class="nav-link active">Dashboard</a>
     <a href="/threats.html" class="nav-link">Threats</a>
+    <a href="/coverage-gap.html" class="nav-link">Coverage Gap</a>
     <a href="/sectors.html" class="nav-link">Sectors</a>
     <a href="/iocs.html" class="nav-link">IOCs</a>
     <a href="/actors.html" class="nav-link">Actors</a>
@@ -123,6 +124,40 @@
         <span class="text-xs text-3">Feeds active</span>
         <span class="intel-big" id="s-feeds">—</span>
       </div>
+    </div>
+  </div>
+
+  <!-- Demo gap/unique-find cards -->
+  <div class="section-head mb-3">
+    <div class="section-title">Unique Finds</div>
+    <a class="text-xs text-2" href="/threats.html?source_kind=unique">Open demo view</a>
+  </div>
+  <div class="unique-grid mb-6">
+    <div class="unique-card">
+      <div class="unique-label">Article-sourced</div>
+      <div class="unique-value" id="u-article">—</div>
+    </div>
+    <div class="unique-card">
+      <div class="unique-label">Not seen elsewhere</div>
+      <div class="unique-value c-low" id="u-unique">—</div>
+    </div>
+    <div class="unique-card">
+      <div class="unique-label">IOC-rich unique</div>
+      <div class="unique-value c-blue" id="u-ioc">—</div>
+    </div>
+    <div class="unique-card">
+      <div class="unique-label">Actor/campaign unique</div>
+      <div class="unique-value" style="color:var(--govt)" id="u-actor">—</div>
+    </div>
+  </div>
+
+  <div class="card mb-6">
+    <div class="card-head">
+      <div class="card-title">Latest Not Seen Elsewhere</div>
+      <a class="card-link" href="/threats.html?source_kind=unique">View filtered</a>
+    </div>
+    <div id="unique-finds-list">
+      <div class="empty"><div class="empty-title">Checking source coverage…</div></div>
     </div>
   </div>
 

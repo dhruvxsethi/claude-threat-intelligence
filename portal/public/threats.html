@@ -16,6 +16,7 @@
   <div class="navbar-links">
     <a href="/" class="nav-link">Dashboard</a>
     <a href="/threats.html" class="nav-link active">Threats</a>
+    <a href="/coverage-gap.html" class="nav-link">Coverage Gap</a>
     <a href="/sectors.html" class="nav-link">Sectors</a>
     <a href="/iocs.html" class="nav-link">IOCs</a>
     <a href="/actors.html" class="nav-link">Actors</a>
@@ -97,7 +98,17 @@
         <div class="filter-check-row">
           <label class="filter-check"><input type="checkbox" id="f-has-cves" onchange="applyFilters()"> CVEs</label>
           <label class="filter-check"><input type="checkbox" id="f-has-iocs" onchange="applyFilters()"> IOCs</label>
-          <label class="filter-check"><input type="checkbox" id="f-articles-only" onchange="applyFilters()"> Articles</label>
+        </div>
+      </div>
+
+      <div class="fp-group fp-group--stack tf-source">
+        <span class="fp-label">Demo views</span>
+        <div class="filter-group filter-group--wide">
+          <button class="filter-pill active" data-source-kind="" onclick="setSourceKindPill(this,'')">All</button>
+          <button class="filter-pill" data-source-kind="articles" onclick="setSourceKindPill(this,'articles')">Article feeds</button>
+          <button class="filter-pill low" data-source-kind="unique" onclick="setSourceKindPill(this,'unique')">Not seen elsewhere</button>
+          <button class="filter-pill" data-source-kind="ioc_rich_unique" onclick="setSourceKindPill(this,'ioc_rich_unique')">IOC-rich unique</button>
+          <button class="filter-pill government" data-source-kind="actor_campaign_unique" onclick="setSourceKindPill(this,'actor_campaign_unique')">Actor/campaign unique</button>
         </div>
       </div>
 
@@ -105,6 +116,7 @@
       <select id="f-severity" style="display:none"><option value=""></option></select>
       <select id="f-sector"   style="display:none"><option value=""></option></select>
       <select id="f-days"     style="display:none"><option value="7" selected></option></select>
+      <input type="hidden" id="f-source-kind" value="">
     </div>
   </div>
 

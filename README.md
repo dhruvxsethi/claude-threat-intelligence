@@ -69,8 +69,9 @@ The pipeline switches automatically. No API costs.
 ## Gap Tracking & Evidence
 
 - Every newly saved threat gets an evidence trail: source article/advisory, extraction summary, extraction time, and initial gap status.
-- Gap status starts as `not_seen_elsewhere`. Sync or import OTX/AlienVault sightings later to mark threats as `seen_elsewhere` or `seen_by_us_first`.
-- OTX can be synced directly when `OTX_API_KEY` is present in `.env`. OTX is used as an external comparison source, not as the primary intelligence source.
+- Gap status starts as `not_seen_elsewhere`. Sync external comparison sources later to mark threats as `seen_elsewhere` or `seen_by_us_first`.
+- OTX can be synced directly when `OTX_API_KEY` is present in `.env`. OTX is used as one external comparison source, not as the primary intelligence source.
+- Public comparison sync checks NVD, CISA KEV, GitHub advisories, MalwareBazaar, URLHaus (when `URLHAUS_AUTH_KEY` is present), and optional Shodan/Censys enrichment when their API keys are present.
 - Import external sightings with:
 
 ```bash
@@ -84,7 +85,18 @@ Expected JSON fields include `provider`, `external_id`, `first_seen_at`, `url`, 
 npm run sync:otx
 ```
 
-- Threat detail pages include an Evidence tab showing source material, extraction evidence, external sightings, and gap status.
+- Sync the broader comparison set with:
+
+```bash
+npm run sync:external
+```
+
+- Threat detail pages and the Coverage Gap page include source material, extraction evidence, external sightings, and gap status.
+- Export the demo report with:
+
+```bash
+npm run report:demo
+```
 
 ## Source Discovery
 
@@ -94,7 +106,7 @@ Source discovery suggests candidate RSS/Atom feeds and stores them for review in
 npm run discover:sources
 ```
 
-The portal also schedules discovery weekly by default (`feeds.discovery_cron_schedule`).
+The portal also schedules discovery daily by default (`feeds.discovery_cron_schedule`).
 
 **"Sync Now" button** — triggers the pipeline immediately from the browser. The portal runs it as a child process and broadcasts a `pipeline_done` event when it's done, causing all connected browsers to reload their data without a page refresh.
 
@@ -149,17 +161,29 @@ Anyone with that URL sees your live portal in real time.
 
 | File | Purpose |
 |---|---|
-| `config/feeds.yml` | All 32+ feed sources — add/disable here |
+| `config/feeds.yml` | All 40 feed sources — add/disable here |
 | `config/settings.yml` | Model, max articles per run, intervals |
-| `.env` | `ANTHROPIC_API_KEY` or `OLLAMA_MODEL` + `PORT` |
+| `.env` | `ANTHROPIC_API_KEY` or `OLLAMA_MODEL` + optional comparison/enrichment keys |
+
+Optional `.env` comparison keys:
+
+```bash
+OTX_API_KEY=...
+URLHAUS_AUTH_KEY=...
+MALWAREBAZAAR_AUTH_KEY=...
+SHODAN_API_KEY=...
+CENSYS_API_ID=...
+CENSYS_API_SECRET=...
+CHROME_PATH=/path/to/chrome
+```
 
 ---
 
 ## Feed Sources
 
-- **APIs:** CISA KEV, NIST NVD, GitHub Advisories
-- **Tier 1 (vendors):** CrowdStrike, Mandiant, Talos, Unit 42, Microsoft, Google TAG, Kaspersky, Check Point, Proofpoint, SentinelOne, Recorded Future, Rapid7
-- **Tier 2 (news):** Krebs, The Hacker News, Bleeping Computer, SecurityWeek, Dark Reading, CyberScoop, SANS ISC, Schneier, Infosecurity Magazine, Sophos
+- **APIs:** CISA KEV, NIST NVD, GitHub Advisories, CERT-EU
+- **Tier 1 (vendors):** CrowdStrike, Mandiant, Talos, Unit 42, Microsoft, Google TAG, Kaspersky, Check Point, Proofpoint, SentinelOne, Recorded Future, Rapid7, Red Canary, Elastic, Huntress, GreyNoise
+- **Tier 2 (news):** Krebs, The Hacker News, Bleeping Computer, SecurityWeek, Dark Reading, CyberScoop, SANS ISC, Schneier, Infosecurity Magazine, Sophos, The Record
 - **Tier 3 (sector):** BankInfoSecurity, GovInfoSecurity, Healthcare IT News, HIPAA Journal
 
 ---
@@ -169,5 +193,7 @@ Anyone with that URL sees your live portal in real time.
 ```bash
 node portal/server.mjs         # start portal + hourly scheduler
 node scripts/run-pipeline.mjs  # manual full sync
+npm run sync:external          # compare local threats with common platforms
+npm run report:demo            # export coverage-gap markdown report
 node scripts/setup.mjs         # initialize database + validate config
 ```

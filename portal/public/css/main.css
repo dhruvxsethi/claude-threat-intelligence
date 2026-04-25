@@ -489,6 +489,7 @@ a:hover { color: #79beff; }
 .threat-filter-row .tf-window   { grid-column: span 3; }
 .threat-filter-row .tf-type     { grid-column: span 5; }
 .threat-filter-row .tf-evidence { grid-column: span 4; }
+.threat-filter-row .tf-source   { grid-column: 1 / -1; }
 
 .threat-filter-panel .fp-group {
   min-width: 0;
@@ -523,6 +524,7 @@ a:hover { color: #79beff; }
 
 .fp-group--stack .fp-label {
   min-width: 0;
+  text-align: center;
 }
 
 /* ─── Filter bar — pill style ────────────────────────────────────────────── */
@@ -537,12 +539,18 @@ a:hover { color: #79beff; }
 .filter-group {
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
   background: rgba(255,255,255,0.04);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 3px;
-  gap: 2px;
+  gap: 4px 8px;
+}
+
+.filter-group--wide {
+  justify-content: center;
+  gap: 8px 12px;
 }
 
 .filter-pill {
@@ -566,8 +574,8 @@ a:hover { color: #79beff; }
 .filter-pill.active.medium   { background: var(--med-dim); color: var(--medium); }
 .filter-pill.active.low      { background: var(--low-dim); color: var(--low); }
 .filter-pill.active.banking  { background: rgba(79,142,247,0.12); color: var(--banking); }
-.filter-pill.active.government{ background: rgba(167,139,250,0.12); color: var(--govt); }
 .filter-pill.active.healthcare{ background: rgba(74,201,126,0.12); color: var(--health); }
+.filter-pill.active.government{ background: rgba(167,139,250,0.12); color: var(--govt); }
 
 .filter-select {
   appearance: none;
@@ -662,11 +670,18 @@ a:hover { color: #79beff; }
 }
 
 .filter-dd-caret {
+  flex: 0 0 auto;
   width: 0;
   height: 0;
   border-left: 4px solid transparent;
   border-right: 4px solid transparent;
   border-top: 5px solid var(--text-3);
+}
+
+#f-type-label {
+  flex: 1;
+  text-align: center;
+  padding-left: 10px;
 }
 
 .filter-dd-menu {
@@ -709,10 +724,72 @@ a:hover { color: #79beff; }
   color: var(--text);
 }
 
+.unique-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.unique-card {
+  min-height: 74px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: rgba(255,255,255,0.03);
+  padding: 14px 16px;
+}
+
+.unique-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.unique-value {
+  margin-top: 8px;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.unique-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.unique-item:last-child { border-bottom: none; }
+.unique-title { font-size: 0.78rem; font-weight: 700; line-height: 1.35; }
+.unique-title a { color: var(--text); }
+.unique-meta { margin-top: 4px; font-size: 0.62rem; color: var(--text-3); }
+.unique-coverage { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+.coverage-chip {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.55rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: rgba(255,255,255,0.03);
+}
+.coverage-chip.unique { color: var(--low); border-color: rgba(74,201,126,0.28); background: rgba(74,201,126,0.1); }
+.coverage-chip.seen { color: var(--medium); border-color: rgba(232,164,74,0.28); background: rgba(232,164,74,0.1); }
+
 .threat-filter-panel .filter-group,
 .threat-filter-panel .time-pills,
 .threat-filter-panel .filter-check-row {
   width: 100%;
+}
+
+.threat-filter-panel .time-pills,
+.threat-filter-panel .filter-check-row {
+  justify-content: center;
 }
 
 .threat-filter-panel .filter-select {
@@ -1124,6 +1201,161 @@ a:hover { color: #79beff; }
   font-size: 0.62rem;
   color: var(--text-3);
   white-space: nowrap;
+}
+
+.feed-quality-table {
+  min-width: 920px;
+}
+
+.quality-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 110px;
+}
+
+.quality-value {
+  width: 28px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.quality-bar {
+  display: block;
+  width: 68px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+
+.quality-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+/* ─── Coverage gap proof view ───────────────────────────────────────────── */
+.coverage-provider-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 16px;
+}
+
+.coverage-provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+  padding: 7px 10px;
+}
+
+.coverage-provider-name {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.coverage-provider-count {
+  min-width: 22px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--blue);
+}
+
+.gap-row {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.gap-row:last-child { border-bottom: none; }
+
+.gap-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.gap-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.gap-title a { color: var(--text); }
+
+.gap-meta {
+  margin-top: 4px;
+  font-size: 0.62rem;
+  color: var(--text-3);
+}
+
+.gap-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 210px;
+}
+
+.gap-summary {
+  margin-top: 10px;
+  color: var(--text-2);
+  font-size: 0.7rem;
+  line-height: 1.6;
+}
+
+.gap-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.gap-facts span {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 7px;
+  background: rgba(255,255,255,0.03);
+  color: var(--text-3);
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+.gap-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.gap-evidence {
+  min-height: 104px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.025);
+  padding: 10px;
+}
+
+.gap-evidence-title {
+  color: var(--text);
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.gap-evidence-body {
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: 0.62rem;
+  line-height: 1.55;
 }
 
 /* ─── Threat detail (tab layout) ─────────────────────────────────────────── */
@@ -1750,6 +1982,10 @@ a:hover { color: #79beff; }
   .d-statbar { grid-template-columns: repeat(2, 1fr); }
   .impact-grid  { grid-template-columns: 1fr; }
   .stats-grid   { grid-template-columns: repeat(2, 1fr); }
+  .unique-grid  { grid-template-columns: repeat(2, 1fr); }
+  .gap-row-head { flex-direction: column; }
+  .gap-status { justify-content: flex-start; min-width: 0; }
+  .gap-evidence-grid { grid-template-columns: 1fr; }
   .threat-filter-row { grid-template-columns: 1fr; align-items: stretch; }
   .threat-filter-row .tf-severity,
   .threat-filter-row .tf-sector,

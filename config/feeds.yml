@@ -64,6 +64,16 @@ feeds:
       per_page: 30
       type: reviewed
 
+  - id: cert_eu_advisories
+    name: "CERT-EU Security Advisories"
+    url: "https://cert.europa.eu/publications/security-advisories-rss"
+    type: rss
+    tier: 1
+    rotation_slot: A
+    sectors: [government, banking, healthcare]
+    enabled: true
+    source_credibility: 94
+
   # ─── TIER 2: MAJOR SECURITY VENDORS ─────────────────────────────────────
 
   - id: crowdstrike_blog
@@ -176,7 +186,57 @@ feeds:
     enabled: true
     source_credibility: 88
 
+  - id: red_canary_blog
+    name: "Red Canary Threat Detection"
+    url: "https://redcanary.com/blog/feed/"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 86
+
+  - id: elastic_security_labs
+    name: "Elastic Security Labs"
+    url: "https://www.elastic.co/security-labs/rss/feed.xml"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 86
+
+  - id: huntress_blog
+    name: "Huntress Threat Research"
+    url: "https://www.huntress.com/blog/rss.xml"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 82
+
+  - id: greynoise_blog
+    name: "GreyNoise Labs"
+    url: "https://www.greynoise.io/blog/rss.xml"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 84
+
   # ─── TIER 3: ESTABLISHED SECURITY NEWS ──────────────────────────────────
+
+  - id: the_record
+    name: "The Record"
+    url: "https://therecord.media/feed/"
+    type: rss
+    tier: 3
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 78
 
   - id: krebs_on_security
     name: "Krebs on Security"
@@ -364,6 +424,6 @@ feeds:
 
 # Feed health tracking (auto-updated by pipeline)
 _metadata:
-  total_feeds: 32
+  total_feeds: 40
   last_feed_discovery: null
   next_feed_discovery: null

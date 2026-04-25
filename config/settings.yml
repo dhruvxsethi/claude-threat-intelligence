@@ -42,6 +42,10 @@ integrations:
     # OTX is used for external sighting/gap comparison, not as a primary intelligence feed.
     cron_schedule: "30 * * * *"
     lookback_days: 14
+  external_comparison:
+    # Public comparison sync: NVD, CISA KEV, GitHub advisories, MalwareBazaar,
+    # URLHaus, and optional Shodan/Censys if API keys are present.
+    cron_schedule: "45 */2 * * *"
 
 credibility:
   # Source tier weights (tier 1-5 mapped to 0-40 points)
@@ -69,10 +73,10 @@ portal:
 feeds:
   # How often to check for dead/redirected feeds (hours)
   health_check_interval: 24
-  # How often Claude discovers and suggests new feeds (hours)
-  discovery_interval: 168  # weekly
+  # How often to discover and suggest new sources (hours)
+  discovery_interval: 24
   # Cron expression for local source discovery suggestions
-  discovery_cron_schedule: "0 2 * * 1"
+  discovery_cron_schedule: "0 2 * * *"
   # Max feed fetch timeout (ms)
   fetch_timeout: 10000
 

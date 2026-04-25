@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radar — Coverage Gap</title>
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+
+<nav class="navbar">
+  <div class="navbar-brand">
+    <div class="brand-mark"></div>
+    <span class="brand-name">Radar</span>
+    <div class="live-indicator"><span class="live-dot"></span>Live</div>
+  </div>
+  <div class="navbar-links">
+    <a href="/" class="nav-link">Dashboard</a>
+    <a href="/threats.html" class="nav-link">Threats</a>
+    <a href="/coverage-gap.html" class="nav-link active">Coverage Gap</a>
+    <a href="/sectors.html" class="nav-link">Sectors</a>
+    <a href="/iocs.html" class="nav-link">IOCs</a>
+    <a href="/actors.html" class="nav-link">Actors</a>
+    <a href="/feeds.html" class="nav-link">Feeds</a>
+  </div>
+  <div class="navbar-actions">
+    <button class="btn-sync" onclick="syncExternal()">Sync Coverage</button>
+    <button class="btn-sync" onclick="downloadDemoReport()" style="background:rgba(255,255,255,0.05);border-color:var(--border);color:var(--text-2)">Export Report</button>
+  </div>
+</nav>
+
+<main class="page">
+  <div class="page-header">
+    <div class="page-title">Coverage Gap</div>
+    <div class="time-pills">
+      <button class="time-pill" data-days="1" onclick="setGapDays(1,this)">24h</button>
+      <button class="time-pill active" data-days="7" onclick="setGapDays(7,this)">7d</button>
+      <button class="time-pill" data-days="14" onclick="setGapDays(14,this)">14d</button>
+      <button class="time-pill" data-days="30" onclick="setGapDays(30,this)">30d</button>
+    </div>
+  </div>
+
+  <div class="unique-grid mb-6">
+    <div class="unique-card">
+      <div class="unique-label">Article-sourced</div>
+      <div class="unique-value" id="cg-article">—</div>
+    </div>
+    <div class="unique-card">
+      <div class="unique-label">Not seen elsewhere</div>
+      <div class="unique-value c-low" id="cg-unique">—</div>
+    </div>
+    <div class="unique-card">
+      <div class="unique-label">Seen elsewhere</div>
+      <div class="unique-value c-medium" id="cg-seen">—</div>
+    </div>
+    <div class="unique-card">
+      <div class="unique-label">Seen by us first</div>
+      <div class="unique-value c-blue" id="cg-first">—</div>
+    </div>
+  </div>
+
+  <div class="card mb-6">
+    <div class="card-head">
+      <div class="card-title">Monitored/Common Source Coverage</div>
+    </div>
+    <div id="coverage-providers" class="coverage-provider-list">Loading…</div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Proof View</div>
+      <span class="text-xs text-3">Source article, extraction evidence, and external coverage</span>
+    </div>
+    <div id="coverage-gap-list">Loading…</div>
+  </div>
+</main>
+
+<div class="toast-wrap" id="toasts"></div>
+<script src="/js/common.js"></script>
+<script src="/js/coverage-gap.js"></script>
+</body>
+</html>

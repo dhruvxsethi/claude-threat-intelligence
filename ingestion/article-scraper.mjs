@@ -3,10 +3,13 @@ import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const RAW_DIR = join(ROOT, 'data/raw');
+const execFileAsync = promisify(execFile);
 
 // Selectors to try for main article content (ordered by preference)
 const CONTENT_SELECTORS = [
@@ -113,6 +116,53 @@ export async function fetchArticle(url, timeoutMs = 15000) {
   }
 }
 
+function chromeCandidates() {
+  return [
+    process.env.CHROME_PATH,
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+  ].filter(Boolean);
+}
+
+function findChrome() {
+  return chromeCandidates().find(p => p.includes('/') ? existsSync(p) : p);
+}
+
+export async function fetchArticleWithBrowser(url, timeoutMs = 30000) {
+  const chrome = findChrome();
+  if (!chrome) return { success: false, error: 'No Chrome/Chromium executable found' };
+
+  try {
+    const { stdout } = await execFileAsync(chrome, [
+      '--headless=new',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+      '--disable-background-networking',
+      '--disable-extensions',
+      '--disable-sync',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--virtual-time-budget=8000',
+      '--dump-dom',
+      url,
+    ], {
+      timeout: timeoutMs,
+      maxBuffer: 20 * 1024 * 1024,
+      env: { ...process.env },
+    });
+
+    if (!stdout || stdout.length < 200) return { success: false, error: 'Rendered DOM too short' };
+    return { success: true, html: stdout, finalUrl: url, rendered: true };
+  } catch (err) {
+    return { success: false, error: `Browser render failed: ${err.message}` };
+  }
+}
+
 export function extractContent(html, url) {
   const $ = cheerio.load(html);
   const jsonLd = extractJsonLdArticle($);
@@ -215,12 +265,36 @@ export async function scrapeArticle(url, cacheEnabled = true) {
     }
   }
 
-  const { success, html, error, finalUrl } = await fetchArticle(url);
+  let { success, html, error, finalUrl, rendered } = await fetchArticle(url);
+  if (!success && process.env.BROWSER_RENDERED_SCRAPE !== 'false') {
+    const browserResult = await fetchArticleWithBrowser(url);
+    if (browserResult.success) {
+      ({ success, html, error, finalUrl, rendered } = browserResult);
+    }
+  }
   if (!success) return { success: false, error };
 
   const extracted = extractContent(html, finalUrl || url);
 
   if (extracted.content_length < 200) {
+    if (!rendered && process.env.BROWSER_RENDERED_SCRAPE !== 'false') {
+      const browserResult = await fetchArticleWithBrowser(url);
+      if (browserResult.success) {
+        const browserExtracted = extractContent(browserResult.html, browserResult.finalUrl || url);
+        if (browserExtracted.content_length >= 200) {
+          const result = {
+            success: true,
+            url: browserResult.finalUrl || url,
+            ...browserExtracted,
+            extraction_method: `browser_rendered:${browserExtracted.extraction_method}`,
+          };
+          if (cacheEnabled) {
+            writeFileSync(cachePath, JSON.stringify({ cached_at: new Date().toISOString(), data: result }));
+          }
+          return result;
+        }
+      }
+    }
     return {
       success: false,
       error: extracted.access_limit ? `Access limited: ${extracted.access_limit}` : 'Content too short (paywall or bot block)',
@@ -228,7 +302,12 @@ export async function scrapeArticle(url, cacheEnabled = true) {
     };
   }
 
-  const result = { success: true, url: finalUrl || url, ...extracted };
+  const result = {
+    success: true,
+    url: finalUrl || url,
+    ...extracted,
+    extraction_method: rendered ? `browser_rendered:${extracted.extraction_method}` : extracted.extraction_method,
+  };
 
   if (cacheEnabled) {
     writeFileSync(cachePath, JSON.stringify({ cached_at: new Date().toISOString(), data: result }));

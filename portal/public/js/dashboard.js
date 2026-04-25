@@ -8,6 +8,7 @@ function setDays(days, btn) {
   if (lbl) lbl.textContent = `${days === 1 ? '24-hour' : days + '-day'} total`;
   loadStats();
   loadLatest();
+  loadUniqueFinds();
 }
 
 function setText(id, val) {
@@ -67,6 +68,45 @@ async function loadLatest() {
   </table></div>`;
 }
 
+async function loadUniqueFinds() {
+  const d = await fetch(`/api/unique-finds?days=${_days}&limit=6`).then(r => r.json());
+  setText('u-article', d.summary?.article_sourced ?? 0);
+  setText('u-unique', d.summary?.unique_candidates ?? 0);
+  setText('u-ioc', d.summary?.ioc_rich_unique ?? 0);
+  setText('u-actor', d.summary?.actor_campaign_unique ?? 0);
+
+  const el = document.getElementById('unique-finds-list');
+  if (!el) return;
+  const rows = d.latest_unique || [];
+  if (!rows.length) {
+    el.innerHTML = `<div class="empty">
+      <div class="empty-title">No unique article finds in this window</div>
+      <div class="empty-sub">Run Sync Now, then use the feed quality page to see which article sources are producing useful records.</div>
+    </div>`;
+    return;
+  }
+
+  el.innerHTML = rows.map(t => {
+    const coverage = t.coverage || {};
+    const chips = [
+      `<span class="coverage-chip unique">not seen elsewhere</span>`,
+      (t.ioc_count || 0) > 0 ? `<span class="coverage-chip">${t.ioc_count} IOCs</span>` : '',
+      (t.cve_count || 0) > 0 ? `<span class="coverage-chip">${t.cve_count} CVEs</span>` : '',
+      ...(t.derived_actors || []).slice(0, 2).map(a => `<span class="coverage-chip">${esc(a)}</span>`),
+    ].filter(Boolean).join('');
+
+    return `<div class="unique-item">
+      <div>${sevBadge(t.severity)}</div>
+      <div>
+        <div class="unique-title"><a href="/threat-detail.html?id=${t.id}">${esc(t.title)}</a></div>
+        <div class="unique-meta">${esc(t.source_name || 'Unknown source')} · ${relTime(t.ingested_at)} · ${esc(coverage.confidence || 'source-only')}</div>
+        <div class="unique-coverage">${chips}</div>
+      </div>
+      <a class="card-link" href="/threat-detail.html?id=${t.id}">Evidence</a>
+    </div>`;
+  }).join('');
+}
+
 function renderCriticalCves(cves) {
   const el = document.getElementById('critical-cves');
   if (!el || !cves.length) return;
@@ -98,5 +138,6 @@ function renderTopActors(actors) {
 
 loadStats();
 loadLatest();
-setInterval(() => { loadStats(); loadLatest(); }, 30000);
-connectSse(null, () => { loadStats(); loadLatest(); });
+loadUniqueFinds();
+setInterval(() => { loadStats(); loadLatest(); loadUniqueFinds(); }, 30000);
+connectSse(null, () => { loadStats(); loadLatest(); loadUniqueFinds(); });

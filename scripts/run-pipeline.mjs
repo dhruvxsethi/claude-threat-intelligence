@@ -182,7 +182,7 @@ function evidenceFromArticle(article, analysisData, sourceKind = 'article') {
     {
       evidence_type: 'gap_tracking',
       title: 'Gap tracking status',
-      body: 'No matching OTX sighting has been imported for this threat yet.',
+      body: 'No matching external/common-source sighting has been imported for this threat yet.',
       url: article.url,
       observed_at: new Date().toISOString(),
       metadata: {

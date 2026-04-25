@@ -12,7 +12,9 @@
     "migrate": "node scripts/migrate.mjs",
     "discover:sources": "node scripts/discover-sources.mjs",
     "import:sightings": "node scripts/import-external-sightings.mjs",
-    "sync:otx": "node scripts/sync-otx-sightings.mjs"
+    "sync:otx": "node scripts/sync-otx-sightings.mjs",
+    "sync:external": "node scripts/sync-external-comparison.mjs",
+    "report:demo": "node scripts/generate-demo-report.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",

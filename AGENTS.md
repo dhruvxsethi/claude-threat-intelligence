@@ -76,7 +76,7 @@ Every article becomes this:
 - `related_threat_ids[]` — linked threats sharing actor/CVE/TTP
 - `evidence[]` — source article, extraction time, and reason it matters
 - `gap_status` — seen by us first / seen elsewhere / not seen elsewhere
-- `external_sightings[]` — optional OTX/vendor comparison data
+- `external_sightings[]` — optional OTX/NVD/CISA/GitHub/MalwareBazaar/URLHaus/vendor comparison data
 
 ## Sectors
 

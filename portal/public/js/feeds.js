@@ -3,6 +3,7 @@ function setText(id, v) { const el = document.getElementById(id); if (el) el.tex
 async function loadFeeds() {
   const d = await fetch('/api/feeds').then(r => r.json());
   const feeds  = d.health || [];
+  const quality = d.feedQuality || [];
   const runs   = d.recentRuns || [];
   const discovered = d.discoveredSources || [];
 
@@ -16,6 +17,7 @@ async function loadFeeds() {
   setText('runs-today', runs.filter(r => new Date(r.started_at).toDateString() === today).length);
 
   renderHealth(feeds);
+  renderQuality(quality);
   renderDiscovered(discovered);
   renderRuns(runs);
 }
@@ -115,6 +117,48 @@ function renderRuns(runs) {
       <td class="text-xs text-3">${relTime(r.started_at)}</td>
     </tr>`).join('')}</tbody>
   </table></div>`;
+}
+
+function renderQuality(feeds) {
+  const el = document.getElementById('feed-quality-list');
+  if (!el) return;
+  const rows = feeds.filter(f => (f.computed_threats || 0) > 0 || (f.articles_seen || 0) > 0).slice(0, 10);
+  if (!rows.length) {
+    el.innerHTML = '<div class="text-sm text-3" style="padding:16px">No quality metrics yet. Run Sync Now after adding feeds.</div>';
+    return;
+  }
+
+  el.innerHTML = `<div class="table-wrap"><table class="data-table feed-quality-table">
+    <thead><tr>
+      <th>Source</th><th>Group</th><th>Quality</th><th>Threats</th><th>Technical Yield</th><th>Save Rate</th>
+    </tr></thead>
+    <tbody>${rows.map(f => {
+      const technical = [
+        `${f.cve_threats || 0} CVE-backed`,
+        `${f.ioc_findings || 0} IOCs`,
+        `${f.actor_threats || 0} actor-backed`,
+      ].join(' · ');
+      return `<tr>
+        <td class="cell-title">
+          <span>${esc(f.feed_name || f.feed_id)}</span>
+          <div class="cell-sub">${f.articles_seen || 0} seen · ${f.articles_processed || 0} processed · ${f.articles_skipped || 0} skipped</div>
+        </td>
+        <td><span class="badge badge-unknown">${esc(f.source_group || feedGroup(f))}</span></td>
+        <td>${qualityMeter(f.quality_score || 0)}</td>
+        <td class="mono text-xs">${f.computed_threats || 0}</td>
+        <td class="text-xs text-2">${technical}</td>
+        <td class="mono text-xs">${Math.round((f.save_rate || 0) * 100)}%</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
+function qualityMeter(score) {
+  const color = score >= 70 ? 'var(--low)' : score >= 40 ? 'var(--medium)' : 'var(--text-3)';
+  return `<div class="quality-meter">
+    <span class="quality-value" style="color:${color}">${score}</span>
+    <span class="quality-bar"><span style="width:${Math.max(3, Math.min(100, score))}%;background:${color}"></span></span>
+  </div>`;
 }
 
 function renderDiscovered(sources) {

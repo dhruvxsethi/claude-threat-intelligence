@@ -267,7 +267,7 @@ function renderTab(name) {
           </div>
           <div class="evidence-body">First seen externally: ${s.first_seen_at ? fmtDate(s.first_seen_at) : '—'}</div>
         </div>`).join('')
-      : `<div class="d-empty">No OTX sightings imported for this threat yet.</div>`;
+      : `<div class="d-empty">No external sightings imported for this threat yet.</div>`;
 
     const evidenceRows = t.evidence?.length
       ? t.evidence.map(e => `<div class="evidence-item">

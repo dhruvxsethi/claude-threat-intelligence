@@ -19,6 +19,14 @@ function setDaysPill(btn, days) {
   loadThreats(1);
 }
 
+function setSourceKindPill(btn, val) {
+  btn.closest('.filter-group').querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const input = document.getElementById('f-source-kind');
+  if (input) input.value = val || '';
+  loadThreats(1);
+}
+
 function toggleTypeDropdown(event) {
   event.stopPropagation();
   document.getElementById('type-dropdown')?.classList.toggle('open');
@@ -49,7 +57,7 @@ function getF() {
     days: document.getElementById('f-days')?.value||'7',
     has_cves: document.getElementById('f-has-cves')?.checked?'true':'',
     has_iocs: document.getElementById('f-has-iocs')?.checked?'true':'',
-    source_kind: document.getElementById('f-articles-only')?.checked?'articles':'',
+    source_kind: document.getElementById('f-source-kind')?.value||'',
     search: _q,
   };
 }
@@ -110,6 +118,28 @@ let _ft;
 function filterThreats(q) { clearTimeout(_ft); _ft=setTimeout(()=>{_q=q;loadThreats(1);},300); }
 function sortBy(col) { _sort===col?(_order=_order==='desc'?'asc':'desc'):(_sort=col,_order='desc'); loadThreats(1); }
 
+function applyInitialParams() {
+  const params = new URLSearchParams(location.search);
+  const sourceKind = params.get('source_kind');
+  if (sourceKind) {
+    const input = document.getElementById('f-source-kind');
+    if (input) input.value = sourceKind;
+    document.querySelectorAll('[data-source-kind]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.sourceKind === sourceKind);
+    });
+  }
+
+  const days = params.get('days');
+  if (days) {
+    const sel = document.getElementById('f-days');
+    if (sel) sel.innerHTML = `<option value="${days}" selected></option>`;
+    document.querySelectorAll('.time-pill').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.days === days);
+    });
+  }
+}
+
+applyInitialParams();
 loadThreats();
 setInterval(()=>loadThreats(_page), 30000);
 connectSse(null, ()=>loadThreats(1));
