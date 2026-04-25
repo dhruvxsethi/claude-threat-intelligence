@@ -38,7 +38,7 @@
 
   <div class="filter-panel threat-filter-panel mb-4">
     <div class="filter-panel-row threat-filter-row">
-      <div class="fp-group fp-group--stack">
+      <div class="fp-group fp-group--stack tf-severity">
         <span class="fp-label">Severity</span>
         <div class="filter-group">
           <button class="filter-pill active" data-filter="severity" data-val="" onclick="setFilterPill(this,'severity','')">All</button>
@@ -49,7 +49,7 @@
         </div>
       </div>
 
-      <div class="fp-group fp-group--stack">
+      <div class="fp-group fp-group--stack tf-sector">
         <span class="fp-label">Sector</span>
         <div class="filter-group">
           <button class="filter-pill active" data-filter="sector" data-val="" onclick="setFilterPill(this,'sector','')">All</button>
@@ -59,7 +59,7 @@
         </div>
       </div>
 
-      <div class="fp-group fp-group--stack">
+      <div class="fp-group fp-group--stack tf-window">
         <span class="fp-label">Window</span>
         <div class="time-pills">
           <button class="time-pill" data-days="1" onclick="setDaysPill(this,1)">24h</button>
@@ -69,7 +69,7 @@
         </div>
       </div>
 
-      <div class="fp-group fp-group--stack">
+      <div class="fp-group fp-group--stack tf-type">
         <span class="fp-label">Type</span>
         <select class="filter-select" id="f-type" onchange="applyFilters()">
           <option value="">All Types</option>
@@ -85,7 +85,7 @@
         </select>
       </div>
 
-      <div class="fp-group fp-group--stack">
+      <div class="fp-group fp-group--stack tf-evidence">
         <span class="fp-label">Evidence</span>
         <div class="filter-check-row">
           <label class="filter-check"><input type="checkbox" id="f-has-cves" onchange="applyFilters()"> CVEs</label>

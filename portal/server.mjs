@@ -217,11 +217,24 @@ app.get('/api/stats', (req, res) => {
   `).get(cutoff).cnt;
 
   // Top threat actors
-  const top_actors = db.prepare(`
+  let top_actors = db.prepare(`
     SELECT ta.name, COUNT(*) as cnt FROM threat_actors ta
-    JOIN threats t ON ta.threat_id = t.id WHERE t.ingested_at >= ?
+    JOIN threats t ON ta.threat_id = t.id
+    WHERE t.ingested_at >= ? AND ta.name != '' AND ta.name IS NOT NULL
     GROUP BY ta.name ORDER BY cnt DESC LIMIT 10
   `).all(cutoff);
+
+  if (!top_actors.length) {
+    const threatRows = db.prepare(`
+      SELECT id, title, summary, severity, source_name, ingested_at, published_at,
+             sectors, geography, threat_type, malware_families
+      FROM threats WHERE ingested_at >= ?
+      ORDER BY ingested_at DESC LIMIT 200
+    `).all(cutoff).map(parseThreat);
+    top_actors = aggregateDerivedActors(threatRows)
+      .slice(0, 10)
+      .map(a => ({ name: a.name, cnt: a.threat_count, derived: true }));
+  }
 
   // Feed health
   const feed_health = db.prepare(`
@@ -451,6 +464,12 @@ app.get('/api/actors', (req, res) => {
   const db = ensureDb();
   const { days = 30, search } = req.query;
   const cutoff = new Date(Date.now() - parseInt(days) * 86400000).toISOString();
+  const threatCountInWindow = db.prepare('SELECT COUNT(*) as cnt FROM threats WHERE ingested_at >= ?').get(cutoff).cnt;
+  const storedActorRows = db.prepare(`
+    SELECT COUNT(*) as cnt
+    FROM threat_actors ta JOIN threats t ON ta.threat_id = t.id
+    WHERE t.ingested_at >= ? AND ta.name != '' AND ta.name IS NOT NULL
+  `).get(cutoff).cnt;
 
   let where = 't.ingested_at >= ? AND ta.name != \'\' AND ta.name IS NOT NULL';
   const params = [cutoff];
@@ -539,10 +558,22 @@ app.get('/api/actors', (req, res) => {
       ORDER BY ingested_at DESC LIMIT 200
     `).all(cutoff).map(parseThreat);
     actorRows = aggregateDerivedActors(threatRows);
+    if (search) {
+      const q = String(search).toLowerCase();
+      actorRows = actorRows.filter(a =>
+        [a.name, a.origin_country, a.motivation, a.sophistication]
+          .some(v => String(v || '').toLowerCase().includes(q))
+      );
+    }
   }
 
   res.json({
     actors: actorRows,
+    diagnostics: {
+      threats_in_window: threatCountInWindow,
+      stored_actor_rows: storedActorRows,
+      derived_actor_rows: actorRows.filter(a => a.derived).length,
+    },
     summary: {
       total_actors: actorRows.length,
       by_motivation: by_motivation.length ? by_motivation : summarizeActorField(actorRows, 'motivation'),

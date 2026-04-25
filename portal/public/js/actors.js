@@ -1,5 +1,6 @@
 let _days = 30, _motiv = '', _soph = '', _search = '', _selected = null;
 let _allActors = [];
+let _actorDiagnostics = {};
 
 const MOTIV_COLORS = {
   financial:    '#4ac97e',
@@ -24,6 +25,7 @@ async function loadActors() {
   if (_search) p.set('search', _search);
   const d = await fetch('/api/actors?' + p).then(r => r.json());
   _allActors = d.actors || [];
+  _actorDiagnostics = d.diagnostics || {};
 
   const nationState  = _allActors.filter(a => a.sophistication === 'nation_state').length;
   const countries    = new Set(_allActors.map(a => a.origin_country).filter(Boolean)).size;
@@ -51,7 +53,16 @@ function renderGrid() {
   const visible = applyFilters(_allActors);
 
   if (!visible.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">⬡</div><div class="empty-title">No actors found</div><div class="empty-sub">Try a wider time range or different filters.</div></div>';
+    const threats = _actorDiagnostics.threats_in_window || 0;
+    const stored = _actorDiagnostics.stored_actor_rows || 0;
+    const hasFilters = Boolean(_motiv || _soph || _search);
+    const title = threats > 0 && !stored ? 'No attributed actors yet' : 'No actors found';
+    const sub = hasFilters
+      ? 'Try clearing the actor filters or widening the time range.'
+      : threats > 0
+        ? threats + ' reports are in this window, but none contain explicit actor attribution. Actor cards appear after news/blog reports name groups like APT28, Lazarus, LockBit, or country-linked activity.'
+        : 'Run a sync or widen the time range to include reports with actor attribution.';
+    el.innerHTML = '<div class="empty"><div class="empty-icon">⬡</div><div class="empty-title">' + title + '</div><div class="empty-sub">' + esc(sub) + '</div></div>';
     return;
   }
 
