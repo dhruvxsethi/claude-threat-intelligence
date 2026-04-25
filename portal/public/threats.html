@@ -71,18 +71,25 @@
 
       <div class="fp-group fp-group--stack tf-type">
         <span class="fp-label">Type</span>
-        <select class="filter-select" id="f-type" onchange="applyFilters()">
-          <option value="">All Types</option>
-          <option value="vulnerability">Vulnerability</option>
-          <option value="zero_day">Zero Day</option>
-          <option value="ransomware">Ransomware</option>
-          <option value="apt">APT</option>
-          <option value="phishing">Phishing</option>
-          <option value="malware">Malware</option>
-          <option value="data_breach">Data Breach</option>
-          <option value="supply_chain">Supply Chain</option>
-          <option value="ddos">DDoS</option>
-        </select>
+        <input type="hidden" id="f-type" value="">
+        <div class="filter-dropdown" id="type-dropdown">
+          <button class="filter-dd-btn" type="button" onclick="toggleTypeDropdown(event)">
+            <span id="f-type-label">All Types</span>
+            <span class="filter-dd-caret"></span>
+          </button>
+          <div class="filter-dd-menu">
+            <button type="button" class="filter-dd-option active" data-val="" onclick="setTypeFilter(this)">All Types</button>
+            <button type="button" class="filter-dd-option" data-val="vulnerability" onclick="setTypeFilter(this)">Vulnerability</button>
+            <button type="button" class="filter-dd-option" data-val="zero_day" onclick="setTypeFilter(this)">Zero Day</button>
+            <button type="button" class="filter-dd-option" data-val="ransomware" onclick="setTypeFilter(this)">Ransomware</button>
+            <button type="button" class="filter-dd-option" data-val="apt" onclick="setTypeFilter(this)">APT</button>
+            <button type="button" class="filter-dd-option" data-val="phishing" onclick="setTypeFilter(this)">Phishing</button>
+            <button type="button" class="filter-dd-option" data-val="malware" onclick="setTypeFilter(this)">Malware</button>
+            <button type="button" class="filter-dd-option" data-val="data_breach" onclick="setTypeFilter(this)">Data Breach</button>
+            <button type="button" class="filter-dd-option" data-val="supply_chain" onclick="setTypeFilter(this)">Supply Chain</button>
+            <button type="button" class="filter-dd-option" data-val="ddos" onclick="setTypeFilter(this)">DDoS</button>
+          </div>
+        </div>
       </div>
 
       <div class="fp-group fp-group--stack tf-evidence">
@@ -90,6 +97,7 @@
         <div class="filter-check-row">
           <label class="filter-check"><input type="checkbox" id="f-has-cves" onchange="applyFilters()"> CVEs</label>
           <label class="filter-check"><input type="checkbox" id="f-has-iocs" onchange="applyFilters()"> IOCs</label>
+          <label class="filter-check"><input type="checkbox" id="f-articles-only" onchange="applyFilters()"> Articles</label>
         </div>
       </div>
 

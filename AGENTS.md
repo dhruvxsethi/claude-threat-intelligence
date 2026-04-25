@@ -1,6 +1,6 @@
 # Claude Threat Intelligence Platform
 
-AI-powered global threat intelligence platform. The AI analyst backend reads raw articles, extracts structured threat data, and normalizes it into a unified schema. AlienVault/OTX/XSIAM are not intelligence sources for ingestion; they are comparison targets for gap tracking.
+AI-powered global threat intelligence platform. The AI analyst backend reads raw articles, extracts structured threat data, and normalizes it into a unified schema. AlienVault OTX is not the primary intelligence source; it is a comparison target for gap tracking.
 
 ## Quick Start
 
@@ -76,7 +76,7 @@ Every article becomes this:
 - `related_threat_ids[]` — linked threats sharing actor/CVE/TTP
 - `evidence[]` — source article, extraction time, and reason it matters
 - `gap_status` — seen by us first / seen elsewhere / not seen elsewhere
-- `external_sightings[]` — optional OTX/XSIAM/vendor comparison data
+- `external_sightings[]` — optional OTX/vendor comparison data
 
 ## Sectors
 

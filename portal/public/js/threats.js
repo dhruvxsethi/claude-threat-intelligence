@@ -19,6 +19,28 @@ function setDaysPill(btn, days) {
   loadThreats(1);
 }
 
+function toggleTypeDropdown(event) {
+  event.stopPropagation();
+  document.getElementById('type-dropdown')?.classList.toggle('open');
+}
+
+function setTypeFilter(btn) {
+  const dd = btn.closest('.filter-dropdown');
+  const val = btn.dataset.val || '';
+  const input = document.getElementById('f-type');
+  const label = document.getElementById('f-type-label');
+  if (input) input.value = val;
+  if (label) label.textContent = btn.textContent.trim();
+  dd?.querySelectorAll('.filter-dd-option').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  dd?.classList.remove('open');
+  loadThreats(1);
+}
+
+document.addEventListener('click', () => {
+  document.querySelectorAll('.filter-dropdown.open').forEach(dd => dd.classList.remove('open'));
+});
+
 function getF() {
   return {
     severity: document.getElementById('f-severity')?.value||'',
@@ -27,6 +49,7 @@ function getF() {
     days: document.getElementById('f-days')?.value||'7',
     has_cves: document.getElementById('f-has-cves')?.checked?'true':'',
     has_iocs: document.getElementById('f-has-iocs')?.checked?'true':'',
+    source_kind: document.getElementById('f-articles-only')?.checked?'articles':'',
     search: _q,
   };
 }
@@ -40,6 +63,7 @@ async function loadThreats(page=1) {
   if (f.threat_type) p.set('threat_type', f.threat_type);
   if (f.has_cves) p.set('has_cves','true');
   if (f.has_iocs) p.set('has_iocs','true');
+  if (f.source_kind) p.set('source_kind', f.source_kind);
   if (f.search) p.set('search', f.search);
 
   const d = await fetch(`/api/threats?${p}`).then(r=>r.json());

@@ -127,7 +127,6 @@ function selectActor(actor) {
   const tile = document.querySelector('[data-name="' + CSS.escape(actor.name) + '"]');
   if (tile) tile.classList.add('selected');
 
-  const el       = document.getElementById('actor-detail');
   const sophLabel = SOPH_LABEL[actor.sophistication] || actor.sophistication || 'Unknown';
   const motivColor = MOTIV_COLORS[actor.motivation] || '#4a5568';
 
@@ -149,15 +148,17 @@ function selectActor(actor) {
 
   const sectorBadges = [...new Set(actor.sectors || [])].map(secBadge).join(' ') || '<span class="text-xs text-3">—</span>';
 
-  el.innerHTML =
-    '<div class="adp-header">'
-    + '<div class="adp-name">' + esc(actor.name) + '</div>'
-    + '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">'
-    +   (actor.origin_country ? '<span class="actor-tag country">' + esc(actor.origin_country) + '</span>' : '')
-    +   '<span class="actor-tag motiv-' + (actor.motivation || 'unknown') + '">' + esc(actor.motivation || 'unknown') + '</span>'
-    +   '<span class="actor-tag soph">' + esc(sophLabel) + '</span>'
-    + '</div>'
-    + '<div style="display:flex;gap:4px">' + sectorBadges + '</div>'
+  const tags = (actor.origin_country ? '<span class="actor-tag country">' + esc(actor.origin_country) + '</span>' : '')
+    + '<span class="actor-tag motiv-' + (actor.motivation || 'unknown') + '">' + esc(actor.motivation || 'unknown') + '</span>'
+    + '<span class="actor-tag soph">' + esc(sophLabel) + '</span>'
+    + (actor.derived ? '<span class="actor-tag soph">Derived</span>' : '');
+
+  document.getElementById('actor-modal-title').textContent = actor.name;
+  document.getElementById('actor-modal-tags').innerHTML = tags;
+  document.getElementById('actor-modal-body').innerHTML =
+    '<div class="adp-section">'
+    + '<div class="adp-section-title">Relevant Sectors</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:4px">' + sectorBadges + '</div>'
     + '</div>'
 
     + '<div class="adp-section">'
@@ -183,7 +184,18 @@ function selectActor(actor) {
     + recentThreats
     + (actor.threat_count > 5 ? '<div style="margin-top:8px"><a href="/threats.html" class="text-xs" style="color:var(--blue)">View all ' + actor.threat_count + ' reports →</a></div>' : '')
     + '</div>';
+
+  document.getElementById('actor-modal')?.classList.add('open');
 }
+
+function closeActorModal(event) {
+  if (event && event.target !== event.currentTarget) return;
+  document.getElementById('actor-modal')?.classList.remove('open');
+}
+
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') closeActorModal();
+});
 
 function renderCountryChart(byCountry) {
   const el = document.getElementById('country-chart');

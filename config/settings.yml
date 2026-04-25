@@ -32,6 +32,16 @@ pipeline:
   fetch_timeout: 15000
   # Min article length to bother analyzing (chars)
   min_article_length: 500
+  # Per-run API caps keep vulnerability databases from crowding out news/blog analysis.
+  max_nvd_items_per_run: 25
+  max_github_advisories_per_run: 25
+  max_cisa_kev_items_per_run: 15
+
+integrations:
+  otx:
+    # OTX is used for external sighting/gap comparison, not as a primary intelligence feed.
+    cron_schedule: "30 * * * *"
+    lookback_days: 14
 
 credibility:
   # Source tier weights (tier 1-5 mapped to 0-40 points)

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Import sightings from OTX/XSIAM or another external platform.
+ * Import sightings from OTX or another external comparison platform.
  *
  * Input: JSON array of objects with any of:
  *   provider, external_id, first_seen_at, last_seen_at, url,

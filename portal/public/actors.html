@@ -132,18 +132,67 @@
       gap: 3px;
     }
 
-    /* Detail panel */
-    .actor-detail-panel {
-      position: sticky;
-      top: calc(var(--navbar-h) + 16px);
-      background: rgba(255,255,255,0.03);
-      border: 1px solid var(--border);
-      border-radius: var(--r-lg);
-      overflow: hidden;
-      max-height: calc(100vh - var(--navbar-h) - 48px);
-      overflow-y: auto;
+    /* Actor detail modal */
+    .actor-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(3,7,14,0.72);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
     }
-    .actor-detail-panel::-webkit-scrollbar { width: 3px; }
+    .actor-modal-backdrop.open { display: flex; }
+
+    .actor-modal {
+      width: min(820px, calc(100vw - 32px));
+      max-height: min(760px, calc(100vh - 48px));
+      display: flex;
+      flex-direction: column;
+      background: #101722;
+      border: 1px solid var(--border-2);
+      border-radius: 10px;
+      box-shadow: 0 30px 90px rgba(0,0,0,0.48);
+      overflow: hidden;
+    }
+
+    .actor-modal-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 22px 14px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+    }
+
+    .actor-modal-close {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: rgba(255,255,255,0.04);
+      color: var(--text-2);
+      font-size: 1rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .actor-modal-close:hover {
+      color: var(--text);
+      border-color: var(--border-2);
+    }
+
+    .actor-modal-body {
+      overflow-y: auto;
+      padding: 0;
+    }
+    .actor-modal-body::-webkit-scrollbar { width: 4px; }
 
     .adp-header {
       padding: 18px 20px 14px;
@@ -261,7 +310,7 @@
       .actors-layout { grid-template-columns: 1fr; }
       .actor-grid { grid-template-columns: 1fr; }
       .actor-summary-bar { grid-template-columns: repeat(2, 1fr); }
-      .actor-detail-panel { position: static; max-height: none; }
+      .actor-modal-backdrop { padding: 12px; }
     }
   </style>
 </head>
@@ -345,13 +394,8 @@
       </div>
     </div>
 
-    <!-- Right: detail panel + intel breakdown -->
+    <!-- Right: intel breakdown -->
     <div>
-      <!-- Actor detail (shown when one is selected) -->
-      <div class="actor-detail-panel mb-4" id="actor-detail">
-        <div class="adp-empty">Click an actor card to see full intelligence profile</div>
-      </div>
-
       <!-- Country breakdown -->
       <div class="card mb-4">
         <div class="card-head"><div class="card-title">Origin Countries</div></div>
@@ -370,6 +414,19 @@
     </div>
   </div>
 </main>
+
+<div class="actor-modal-backdrop" id="actor-modal" onclick="closeActorModal(event)">
+  <div class="actor-modal" role="dialog" aria-modal="true" aria-labelledby="actor-modal-title" onclick="event.stopPropagation()">
+    <div class="actor-modal-top">
+      <div>
+        <div class="adp-name" id="actor-modal-title">Actor profile</div>
+        <div id="actor-modal-tags" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+      </div>
+      <button class="actor-modal-close" type="button" aria-label="Close actor profile" onclick="closeActorModal()">×</button>
+    </div>
+    <div class="actor-modal-body" id="actor-modal-body"></div>
+  </div>
+</div>
 
 <div class="toast-wrap" id="toasts"></div>
 <script src="/js/common.js"></script>

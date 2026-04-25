@@ -70,7 +70,7 @@ app.get('/api/threats', (req, res) => {
   const {
     page = 1, limit = 25, severity, sector, threat_type,
     days = 7, search, sort = 'ingested_at', order = 'desc',
-    has_cves, has_iocs, min_credibility,
+    has_cves, has_iocs, source_kind, min_credibility,
   } = req.query;
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -91,6 +91,13 @@ app.get('/api/threats', (req, res) => {
   }
   if (has_iocs === 'true') {
     where.push('EXISTS (SELECT 1 FROM threat_iocs WHERE threat_id = t.id)');
+  }
+  if (source_kind === 'articles') {
+    where.push(`COALESCE(t.source_name, '') NOT IN (
+      'NIST NVD',
+      'GitHub Security Advisories',
+      'CISA Known Exploited Vulnerabilities'
+    )`);
   }
   if (min_credibility) { where.push('t.credibility_score >= ?'); params.push(parseInt(min_credibility)); }
 
@@ -229,7 +236,13 @@ app.get('/api/stats', (req, res) => {
       SELECT id, title, summary, severity, source_name, ingested_at, published_at,
              sectors, geography, threat_type, malware_families
       FROM threats WHERE ingested_at >= ?
-      ORDER BY ingested_at DESC LIMIT 200
+      ORDER BY
+        CASE
+          WHEN source_name IN ('NIST NVD','GitHub Security Advisories','CISA Known Exploited Vulnerabilities') THEN 1
+          ELSE 0
+        END,
+        ingested_at DESC
+      LIMIT 1000
     `).all(cutoff).map(parseThreat);
     top_actors = aggregateDerivedActors(threatRows)
       .slice(0, 10)
@@ -383,6 +396,7 @@ app.get('/api/feeds', (req, res) => {
 
 let _pipelineRunning = false;
 let _discoveryRunning = false;
+let _otxRunning = false;
 
 app.post('/api/pipeline/run', (req, res) => {
   if (_pipelineRunning) {
@@ -418,6 +432,29 @@ app.post('/api/pipeline/done', (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/otx/sync', (req, res) => {
+  if (_otxRunning) return res.json({ status: 'already_running' });
+  _otxRunning = true;
+  broadcastSse('otx_started', { runId: Date.now() });
+  res.json({ status: 'started' });
+
+  const child = spawn('node', ['scripts/sync-otx-sightings.mjs'], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      OTX_LOOKBACK_DAYS: String(settings.integrations?.otx?.lookback_days || process.env.OTX_LOOKBACK_DAYS || 14),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  child.stdout.on('data', d => process.stdout.write(d));
+  child.stderr.on('data', d => process.stderr.write(d));
+  child.on('close', code => {
+    _otxRunning = false;
+    broadcastSse('pipeline_done', { otx_synced: true, code });
+  });
+});
+
 // ─── Sectors API ──────────────────────────────────────────────────────────
 
 app.get('/api/sectors/:sector', (req, res) => {
@@ -436,12 +473,34 @@ app.get('/api/sectors/:sector', (req, res) => {
     LIMIT 50
   `).all(cutoff, `%${sector}%`);
 
-  const topActors = db.prepare(`
+  let topActors = db.prepare(`
     SELECT ta.name, ta.origin_country, ta.motivation, COUNT(*) as cnt
     FROM threat_actors ta JOIN threats t ON ta.threat_id = t.id
     WHERE t.ingested_at >= ? AND t.sectors LIKE ?
+      AND ta.name != '' AND ta.name IS NOT NULL
     GROUP BY ta.name ORDER BY cnt DESC LIMIT 5
   `).all(cutoff, `%${sector}%`);
+
+  if (!topActors.length) {
+    const actorThreatRows = db.prepare(`
+      SELECT id, title, summary, severity, source_name, ingested_at, published_at,
+             sectors, geography, threat_type, malware_families
+      FROM threats
+      WHERE ingested_at >= ? AND sectors LIKE ?
+      ORDER BY ingested_at DESC LIMIT 1000
+    `).all(cutoff, `%${sector}%`).map(parseThreat);
+
+    topActors = aggregateDerivedActors(actorThreatRows)
+      .filter(a => (a.sectors || []).includes(sector))
+      .slice(0, 5)
+      .map(a => ({
+        name: a.name,
+        origin_country: a.origin_country,
+        motivation: a.motivation,
+        cnt: a.threat_count,
+        derived: true,
+      }));
+  }
 
   const topCves = db.prepare(`
     SELECT c.cve_id, c.cvss_score, c.cvss_severity, c.in_kev, t.title, t.id as threat_id
@@ -555,7 +614,7 @@ app.get('/api/actors', (req, res) => {
       SELECT id, title, summary, severity, source_name, ingested_at, published_at,
              sectors, geography, threat_type, malware_families
       FROM threats WHERE ingested_at >= ?
-      ORDER BY ingested_at DESC LIMIT 200
+      ORDER BY ingested_at DESC LIMIT 1000
     `).all(cutoff).map(parseThreat);
     actorRows = aggregateDerivedActors(threatRows);
     if (search) {
@@ -669,7 +728,7 @@ function fallbackEvidence(threat) {
       title: 'Gap tracking status',
       body: threat.gap_status === 'seen_elsewhere'
         ? 'This threat has at least one imported external sighting.'
-        : 'No matching OTX/XSIAM sighting has been imported for this threat yet.',
+        : 'No matching OTX sighting has been imported for this threat yet.',
       url: threat.source_url,
       observed_at: threat.gap_checked_at || threat.ingested_at,
       metadata: JSON.stringify({ status: threat.gap_status || 'not_checked' }),
@@ -853,11 +912,45 @@ function scheduleSourceDiscovery() {
   console.log(`✓ Source discovery scheduled: ${schedule}`);
 }
 
+function scheduleOtxSync() {
+  if (!process.env.OTX_API_KEY) {
+    console.log('○ OTX sync disabled: OTX_API_KEY not set');
+    return;
+  }
+
+  const schedule = settings.integrations?.otx?.cron_schedule || '30 * * * *';
+  cron.schedule(schedule, () => {
+    if (_otxRunning) {
+      console.log('[CRON] OTX sync already running, skipping');
+      return;
+    }
+    console.log('[CRON] Starting OTX external sighting sync...');
+    _otxRunning = true;
+    const child = spawn('node', ['scripts/sync-otx-sightings.mjs'], {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        OTX_LOOKBACK_DAYS: String(settings.integrations?.otx?.lookback_days || process.env.OTX_LOOKBACK_DAYS || 14),
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    child.stdout.on('data', d => process.stdout.write(d));
+    child.stderr.on('data', d => process.stderr.write(d));
+    child.on('close', code => {
+      _otxRunning = false;
+      broadcastSse('pipeline_done', { otx_synced: true, code });
+    });
+  }, { timezone: 'UTC' });
+
+  console.log(`✓ OTX sync scheduled: ${schedule}`);
+}
+
 // ─── Start ────────────────────────────────────────────────────────────────
 
 ensureDb();
 schedulePipeline();
 scheduleSourceDiscovery();
+scheduleOtxSync();
 
 app.listen(PORT, () => {
   console.log(`\n  Radar — Threat Intelligence`);

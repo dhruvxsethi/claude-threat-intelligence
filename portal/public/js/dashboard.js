@@ -82,10 +82,17 @@ function renderCriticalCves(cves) {
 
 function renderTopActors(actors) {
   const el = document.getElementById('top-actors');
-  if (!el || !actors.length) return;
+  if (!el) return;
+  if (!actors.length) {
+    el.innerHTML = `<div class="empty">
+      <div class="empty-title">No attributed actors yet</div>
+      <div class="empty-sub">Actor cards appear when news or vendor reports name groups, countries, or campaigns.</div>
+    </div>`;
+    return;
+  }
   el.innerHTML = actors.map(a => `<div class="actor-card">
     <div class="actor-name">${esc(a.name)}</div>
-    <div class="actor-meta">${a.cnt} threat${a.cnt !== 1 ? 's' : ''} in ${_days === 1 ? '24h' : _days + ' days'}</div>
+    <div class="actor-meta">${a.derived ? 'Derived · ' : ''}${a.cnt} threat${a.cnt !== 1 ? 's' : ''} in ${_days === 1 ? '24h' : _days + ' days'}</div>
   </div>`).join('');
 }
 

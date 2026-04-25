@@ -182,7 +182,7 @@ function evidenceFromArticle(article, analysisData, sourceKind = 'article') {
     {
       evidence_type: 'gap_tracking',
       title: 'Gap tracking status',
-      body: 'No matching OTX/XSIAM sighting has been imported for this threat yet.',
+      body: 'No matching OTX sighting has been imported for this threat yet.',
       url: article.url,
       observed_at: new Date().toISOString(),
       metadata: {
@@ -448,6 +448,9 @@ async function processArticles(db, items, dedup, correlator, settings) {
 async function processVulnerabilityApis(db, correlator, settings) {
   log('\n→ Fetching vulnerability APIs (NVD, CISA KEV, GitHub)...', 'blue');
   const windowHours = settings.claude.max_article_age_hours || 48;
+  const maxNvdItems = settings.pipeline?.max_nvd_items_per_run ?? 25;
+  const maxGithubItems = settings.pipeline?.max_github_advisories_per_run ?? 25;
+  const maxKevItems = settings.pipeline?.max_cisa_kev_items_per_run ?? 15;
 
   const [nvdResult, kevResult, githubResult] = await Promise.all([
     fetchNvdCves({ hoursBack: windowHours }),
@@ -464,8 +467,9 @@ async function processVulnerabilityApis(db, correlator, settings) {
 
   // NVD CVEs
   if (nvdResult.success && nvdResult.cves.length > 0) {
-    info(`NVD: ${nvdResult.cves.length} CVEs published in last ${windowHours}h`);
-    for (const cve of nvdResult.cves) {
+    const nvdItems = nvdResult.cves.slice(0, maxNvdItems);
+    info(`NVD: ${nvdResult.cves.length} CVEs published in last ${windowHours}h; analyzing newest ${nvdItems.length}`);
+    for (const cve of nvdItems) {
       if (threatExistsBySourceUrl(db, cve.source_url)) continue;
       cve.in_kev = kevIds.has(cve.cve_id);
       const analysis = await analyzeNvdCve(cve, kevIds);
@@ -498,8 +502,9 @@ async function processVulnerabilityApis(db, correlator, settings) {
 
   // CISA KEV
   if (kevResult.success && kevResult.vulnerabilities.length > 0) {
-    info(`CISA KEV: ${kevResult.vulnerabilities.length} entries added in last 7 days`);
-    for (const vuln of kevResult.vulnerabilities) {
+    const kevItems = kevResult.vulnerabilities.slice(0, maxKevItems);
+    info(`CISA KEV: ${kevResult.vulnerabilities.length} entries added in last 7 days; analyzing newest ${kevItems.length}`);
+    for (const vuln of kevItems) {
       const existing = db.prepare('SELECT id FROM threat_cves WHERE cve_id = ?').get(vuln.cveID);
       if (existing) {
         db.prepare('UPDATE threat_cves SET in_kev = 1, exploited_in_wild = 1 WHERE cve_id = ?').run(vuln.cveID);
@@ -548,8 +553,9 @@ async function processVulnerabilityApis(db, correlator, settings) {
 
   // GitHub Security Advisories
   if (githubResult.success && githubResult.advisories.length > 0) {
-    info(`GitHub Advisories: ${githubResult.advisories.length} modified/published in last ${windowHours}h`);
-    for (const advisory of githubResult.advisories) {
+    const githubItems = githubResult.advisories.slice(0, maxGithubItems);
+    info(`GitHub Advisories: ${githubResult.advisories.length} modified/published in last ${windowHours}h; analyzing newest ${githubItems.length}`);
+    for (const advisory of githubItems) {
       if (threatExistsBySourceUrl(db, advisory.url)) continue;
 
       const article = githubAdvisoryToArticle(advisory);

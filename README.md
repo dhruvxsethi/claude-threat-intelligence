@@ -69,7 +69,8 @@ The pipeline switches automatically. No API costs.
 ## Gap Tracking & Evidence
 
 - Every newly saved threat gets an evidence trail: source article/advisory, extraction summary, extraction time, and initial gap status.
-- Gap status starts as `not_seen_elsewhere`. Import OTX/XSIAM sightings later to mark threats as `seen_elsewhere` or `seen_by_us_first`.
+- Gap status starts as `not_seen_elsewhere`. Sync or import OTX/AlienVault sightings later to mark threats as `seen_elsewhere` or `seen_by_us_first`.
+- OTX can be synced directly when `OTX_API_KEY` is present in `.env`. OTX is used as an external comparison source, not as the primary intelligence source.
 - Import external sightings with:
 
 ```bash
@@ -77,6 +78,12 @@ npm run import:sightings -- sightings.json
 ```
 
 Expected JSON fields include `provider`, `external_id`, `first_seen_at`, `url`, `cve_id`, `ioc_type`, and `ioc_value`. Matching is done by URL, CVE, or IOC.
+- Sync OTX directly with:
+
+```bash
+npm run sync:otx
+```
+
 - Threat detail pages include an Evidence tab showing source material, extraction evidence, external sightings, and gap status.
 
 ## Source Discovery

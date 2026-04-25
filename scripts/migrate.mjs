@@ -194,7 +194,7 @@ export function migrate(db) {
       metadata TEXT DEFAULT '{}'
     );
 
-    -- External sightings from OTX, XSIAM, or other comparison systems.
+    -- External sightings from OTX or other comparison systems.
     CREATE TABLE IF NOT EXISTS external_sightings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       threat_id TEXT REFERENCES threats(id) ON DELETE CASCADE,
