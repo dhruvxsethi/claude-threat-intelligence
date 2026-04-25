@@ -83,8 +83,9 @@ function renderHealth(feeds) {
         <div class="feed-dot ${dotCls}"></div>
         <div class="feed-info">
           <div class="feed-name">${esc(f.feed_name || f.feed_id)}</div>
+          <div class="feed-meta">${f.articles_seen || 0} seen · ${f.articles_processed || 0} processed · ${f.articles_skipped || 0} skipped</div>
         </div>
-        <span class="feed-count">${f.total_threats_contributed || 0} threats</span>
+        <span class="feed-count">${f.computed_threats ?? f.total_threats_contributed ?? 0} threats</span>
         <span class="feed-time">${f.last_success ? relTime(f.last_success) : '—'}</span>
         ${statusBadge}
       </div>`;

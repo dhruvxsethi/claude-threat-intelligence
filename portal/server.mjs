@@ -280,6 +280,28 @@ app.get('/api/feeds', (req, res) => {
   const recentRuns = db.prepare(`
     SELECT * FROM feed_runs ORDER BY started_at DESC LIMIT 50
   `).all();
+  const articleStats = Object.fromEntries(db.prepare(`
+    SELECT
+      feed_id,
+      COUNT(*) AS articles_seen,
+      SUM(CASE WHEN analyzed = 1 THEN 1 ELSE 0 END) AS articles_processed,
+      SUM(CASE WHEN threat_id IS NOT NULL THEN 1 ELSE 0 END) AS threats_linked,
+      SUM(CASE WHEN skip_reason IS NOT NULL THEN 1 ELSE 0 END) AS articles_skipped,
+      SUM(CASE WHEN skip_reason = 'duplicate_content' THEN 1 ELSE 0 END) AS duplicate_content,
+      SUM(CASE WHEN skip_reason = 'stale_article' THEN 1 ELSE 0 END) AS stale_articles
+    FROM articles
+    GROUP BY feed_id
+  `).all().map(r => [r.feed_id, r]));
+  const threatStatsBySource = Object.fromEntries(db.prepare(`
+    SELECT source_name, COUNT(*) AS threats_saved
+    FROM threats
+    GROUP BY source_name
+  `).all().map(r => [r.source_name, r.threats_saved]));
+  const kevThreats = db.prepare(`
+    SELECT COUNT(DISTINCT threat_id) AS cnt
+    FROM threat_cves
+    WHERE in_kev = 1
+  `).get().cnt;
 
   // Annotate health entries with enabled status from feeds config
   let feedsById = {};
@@ -287,22 +309,39 @@ app.get('/api/feeds', (req, res) => {
     const cfg = loadFeedsConfig();
     (cfg.feeds || []).forEach(f => { feedsById[f.id] = f; });
   } catch {}
-  const annotated = health.map(h => ({
-    ...h,
-    enabled: feedsById[h.feed_id] ? (feedsById[h.feed_id].enabled !== false) : true,
-    tier: feedsById[h.feed_id]?.tier || null,
-  }));
+  const addMetrics = h => {
+    const cfg = feedsById[h.feed_id];
+    const stats = articleStats[h.feed_id] || {};
+    let computedThreats = stats.threats_linked || 0;
+
+    if (h.feed_id === 'nvd_cve_api') computedThreats = threatStatsBySource['NIST NVD'] || computedThreats;
+    if (h.feed_id === 'github_security_advisories') computedThreats = threatStatsBySource['GitHub Security Advisories'] || computedThreats;
+    if (h.feed_id === 'cisa_kev_api') computedThreats = kevThreats || computedThreats;
+
+    return {
+      ...h,
+      enabled: cfg ? (cfg.enabled !== false) : true,
+      tier: cfg?.tier || null,
+      articles_seen: stats.articles_seen || 0,
+      articles_processed: stats.articles_processed || 0,
+      articles_skipped: stats.articles_skipped || 0,
+      duplicate_content: stats.duplicate_content || 0,
+      stale_articles: stats.stale_articles || 0,
+      computed_threats: computedThreats,
+      total_threats_contributed: computedThreats,
+      raw_threat_counter: h.total_threats_contributed || 0,
+    };
+  };
+  const annotated = health.map(addMetrics);
 
   // Include configured feeds that have never run yet
   const seenIds = new Set(health.map(h => h.feed_id));
   let feedsConfig = [];
   try {
     const cfg = loadFeedsConfig();
-    feedsConfig = (cfg.feeds || []).filter(f => !seenIds.has(f.id)).map(f => ({
+    feedsConfig = (cfg.feeds || []).filter(f => !seenIds.has(f.id)).map(f => addMetrics({
       feed_id: f.id,
       feed_name: f.name,
-      enabled: f.enabled !== false,
-      tier: f.tier,
       is_healthy: f.enabled !== false ? null : 0,
       total_threats_contributed: 0,
       consecutive_failures: 0,
