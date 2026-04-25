@@ -281,12 +281,40 @@ app.get('/api/feeds', (req, res) => {
 
 // ─── Trigger pipeline run manually ────────────────────────────────────────
 
-app.post('/api/pipeline/run', (req, res) => {
-  const child = spawn('node', ['scripts/run-pipeline.mjs'], { cwd: ROOT, detached: true, stdio: 'ignore' });
-  child.unref();
+let _pipelineRunning = false;
 
+app.post('/api/pipeline/run', (req, res) => {
+  if (_pipelineRunning) {
+    return res.json({ status: 'already_running' });
+  }
+  _pipelineRunning = true;
   broadcastSse('pipeline_started', { runId: Date.now() });
   res.json({ status: 'started' });
+
+  // Inherit server's environment (includes OLLAMA_MODEL, ANTHROPIC_API_KEY from .env)
+  const child = spawn('node', ['scripts/run-pipeline.mjs'], {
+    cwd: ROOT,
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let stdoutBuf = '';
+  child.stdout.on('data', d => { stdoutBuf += d.toString(); });
+  child.stderr.on('data', d => process.stderr.write(d));
+
+  child.on('close', (code) => {
+    _pipelineRunning = false;
+    const m = stdoutBuf.match(/Threats saved:\s+(\d+)/);
+    const threats_created = m ? parseInt(m[1]) : 0;
+    broadcastSse('pipeline_done', { threats_created, code });
+  });
+});
+
+// Called by the pipeline script at the end of each run to trigger browser refresh
+app.post('/api/pipeline/done', (req, res) => {
+  const { threats_created = 0, errors = 0 } = req.body || {};
+  broadcastSse('pipeline_done', { threats_created, errors });
+  res.json({ ok: true });
 });
 
 // ─── Sectors API ──────────────────────────────────────────────────────────
@@ -386,15 +414,34 @@ function parseThreat(t) {
 // ─── Built-in cron (runs alongside portal) ────────────────────────────────
 
 function schedulePipeline() {
-  // Full scan every 3 hours — all feeds + vulnerability APIs
-  cron.schedule('0 */3 * * *', () => {
-    console.log('[CRON] Starting full threat intelligence scan...');
-    const child = spawn('node', ['scripts/run-pipeline.mjs'], { cwd: ROOT, detached: true, stdio: 'ignore' });
-    child.unref();
+  // Full scan every hour — all feeds + vulnerability APIs
+  cron.schedule('0 * * * *', () => {
+    if (_pipelineRunning) {
+      console.log('[CRON] Pipeline already running, skipping scheduled run');
+      return;
+    }
+    console.log('[CRON] Starting scheduled threat intelligence scan...');
+    _pipelineRunning = true;
     broadcastSse('pipeline_started', { time: new Date().toISOString() });
+
+    const child = spawn('node', ['scripts/run-pipeline.mjs'], {
+      cwd: ROOT,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdoutBuf = '';
+    child.stdout.on('data', d => { stdoutBuf += d.toString(); process.stdout.write(d); });
+    child.stderr.on('data', d => process.stderr.write(d));
+
+    child.on('close', () => {
+      _pipelineRunning = false;
+      const m = stdoutBuf.match(/Threats saved:\s+(\d+)/);
+      broadcastSse('pipeline_done', { threats_created: m ? parseInt(m[1]) : 0 });
+    });
   }, { timezone: 'UTC' });
 
-  console.log('✓ Pipeline scheduled: full scan every 3 hours');
+  console.log('✓ Pipeline scheduled: every hour');
 }
 
 // ─── Start ────────────────────────────────────────────────────────────────
@@ -403,8 +450,14 @@ ensureDb();
 schedulePipeline();
 
 app.listen(PORT, () => {
-  console.log(`\n  Claude Threat Intelligence Portal`);
-  console.log(`  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-  console.log(`  → http://localhost:${PORT}`);
-  console.log(`  → Press Ctrl+C to stop\n`);
+  console.log(`\n  Sentinel Threat Intelligence`);
+  console.log(`  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`  Portal:  http://localhost:${PORT}`);
+  const backend = process.env.OLLAMA_MODEL
+    ? `Ollama (${process.env.OLLAMA_MODEL})`
+    : process.env.ANTHROPIC_API_KEY
+      ? 'Anthropic Claude'
+      : 'NONE — add OLLAMA_MODEL or ANTHROPIC_API_KEY to .env';
+  console.log(`  Backend: ${backend}`);
+  console.log(`  Sync:    every hour (next run at top of hour UTC)\n`);
 });

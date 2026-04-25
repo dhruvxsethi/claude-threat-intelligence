@@ -3,166 +3,177 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CTI Platform — Dashboard</title>
+  <title>Radar — Dashboard</title>
   <link rel="stylesheet" href="/css/main.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
-<div class="app">
 
-  <nav class="sidebar">
-    <div class="logo">
-      <div class="logo-icon">🛡</div>
-      <div class="logo-text">
-        <div class="logo-name">CTI Platform</div>
-        <div class="logo-sub">by Claude AI</div>
-      </div>
-      <div class="live-pill"><span class="live-dot"></span>Live</div>
+<nav class="navbar">
+  <div class="navbar-brand">
+    <div class="brand-mark"></div>
+    <span class="brand-name">Radar</span>
+    <div class="live-indicator"><span class="live-dot"></span>Live</div>
+  </div>
+  <div class="navbar-links">
+    <a href="/" class="nav-link active">Dashboard</a>
+    <a href="/threats.html" class="nav-link">Threats</a>
+    <a href="/sectors.html" class="nav-link">Sectors</a>
+    <a href="/iocs.html" class="nav-link">IOCs</a>
+    <a href="/feeds.html" class="nav-link">Feeds</a>
+  </div>
+  <div class="navbar-actions">
+    <div class="search-wrap">
+      <span class="search-icon">⌕</span>
+      <input type="text" id="global-search" placeholder="Search threats, CVEs, IOCs…" oninput="globalSearch(this.value)">
     </div>
-    <div class="nav">
-      <div class="nav-label">Intelligence</div>
-      <a class="nav-item active" href="/"><span class="nav-icon">⚡</span>Dashboard</a>
-      <a class="nav-item" href="/threats.html"><span class="nav-icon">🛡</span>Threat Feed</a>
-      <a class="nav-item" href="/sectors.html"><span class="nav-icon">🏢</span>Sectors</a>
-      <a class="nav-item" href="/iocs.html"><span class="nav-icon">🔍</span>IOC Explorer</a>
-      <div class="nav-label" style="margin-top:6px">System</div>
-      <a class="nav-item" href="/feeds.html"><span class="nav-icon">📡</span>Feed Health</a>
-    </div>
-    <div class="sidebar-footer">
-      <button class="btn btn-ghost btn-sm" onclick="triggerPipeline()" style="width:100%;margin-bottom:10px;justify-content:center">↻ Sync Now</button>
-      <div class="meta-row">
-        <span class="text-xs text-3">Schedule</span>
-        <span class="text-xs text-2">Every 3 hours</span>
-      </div>
-    </div>
-  </nav>
+    <button class="btn-sync" onclick="triggerPipeline()">Sync Now</button>
+  </div>
+</nav>
 
-  <div class="main">
-    <div class="topbar">
-      <div class="page-title">Dashboard</div>
-      <div class="search-wrap">
-        <span style="color:var(--text-3);font-size:.9rem">⌕</span>
-        <input type="text" id="global-search" placeholder="Search threats, CVEs, IOCs…" oninput="globalSearch(this.value)">
-      </div>
-    </div>
+<main class="page">
 
-    <div class="content">
-
-      <!-- Metrics strip -->
-      <div class="metrics-bar">
-        <div class="metric">
-          <div class="metric-val c-critical" id="s-critical">—</div>
-          <div class="metric-lbl">Critical</div>
-        </div>
-        <div class="metric">
-          <div class="metric-val c-high" id="s-high">—</div>
-          <div class="metric-lbl">High</div>
-        </div>
-        <div class="metric">
-          <div class="metric-val c-medium" id="s-medium">—</div>
-          <div class="metric-lbl">Medium</div>
-        </div>
-        <div class="metric">
-          <div class="metric-val" id="s-today">—</div>
-          <div class="metric-lbl">Today</div>
-        </div>
-        <div class="metric">
-          <div class="metric-val c-blue" id="s-cves">—</div>
-          <div class="metric-lbl">CVEs</div>
-          <div class="metric-sub" id="s-kev"></div>
-        </div>
-        <div class="metric">
-          <div class="metric-val" id="s-iocs">—</div>
-          <div class="metric-lbl">IOCs</div>
-        </div>
-        <div class="metric">
-          <div class="metric-val c-low" id="s-feeds">—</div>
-          <div class="metric-lbl">Feeds Active</div>
-        </div>
-        <div class="metric">
-          <div class="metric-val" id="s-total">—</div>
-          <div class="metric-lbl">7d Total</div>
-        </div>
-      </div>
-
-      <!-- Sector exposure -->
-      <div class="sector-strip mb-5">
-        <div class="sector-box banking">
-          <div class="sector-emoji">🏦</div>
-          <div>
-            <div class="sector-count" id="sec-banking">0</div>
-            <div class="sector-name">Banking</div>
-          </div>
-        </div>
-        <div class="sector-box government">
-          <div class="sector-emoji">🏛️</div>
-          <div>
-            <div class="sector-count" id="sec-government">0</div>
-            <div class="sector-name">Government</div>
-          </div>
-        </div>
-        <div class="sector-box healthcare">
-          <div class="sector-emoji">🏥</div>
-          <div>
-            <div class="sector-count" id="sec-healthcare">0</div>
-            <div class="sector-name">Healthcare</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Latest threats -->
-      <div class="section-head mb-3">
-        <div class="section-title">Latest Threats</div>
-        <a class="text-xs" href="/threats.html" style="color:var(--blue)">View all →</a>
-      </div>
-      <div class="card mb-5">
-        <div id="latest-threats">
-          <div class="empty">
-            <div class="empty-icon">🛡</div>
-            <div class="empty-title">No threats yet</div>
-            <div class="empty-sub">Click <strong>Sync Now</strong> in the sidebar to fetch your first batch.</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Charts + CVEs/Actors -->
-      <div class="charts-grid mb-5">
-        <div class="card">
-          <div class="card-head"><div class="card-title">Threat Activity — 7 days</div></div>
-          <canvas id="chart-timeline" style="max-height:180px"></canvas>
-        </div>
-        <div class="card">
-          <div class="card-head"><div class="card-title">By Type</div></div>
-          <canvas id="chart-types" style="max-height:180px"></canvas>
-        </div>
-      </div>
-
-      <div class="bottom-grid">
-        <div class="card">
-          <div class="card-head">
-            <div class="card-title">Critical CVEs</div>
-            <a class="card-link" href="/iocs.html">All IOCs →</a>
-          </div>
-          <div id="critical-cves">
-            <div class="empty"><div class="empty-icon">📋</div><div class="empty-title">No CVEs yet</div></div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-head"><div class="card-title">Active Threat Actors</div></div>
-          <div id="top-actors">
-            <div class="empty"><div class="empty-icon">👤</div><div class="empty-title">No actors yet</div></div>
-          </div>
-        </div>
-      </div>
-
+  <!-- Page header with time range filter -->
+  <div class="page-header">
+    <div class="page-title">Dashboard</div>
+    <div class="time-pills">
+      <button class="time-pill" data-days="1"  onclick="setDays(1,this)">24h</button>
+      <button class="time-pill active" data-days="7" onclick="setDays(7,this)">7d</button>
+      <button class="time-pill" data-days="14" onclick="setDays(14,this)">14d</button>
+      <button class="time-pill" data-days="30" onclick="setDays(30,this)">30d</button>
     </div>
   </div>
-</div>
+
+  <!-- Intel cards -->
+  <div class="intel-grid mb-6">
+    <div class="intel-card">
+      <div class="intel-head">Severity</div>
+      <div class="intel-rows">
+        <div class="intel-row">
+          <span class="sev-dot critical"></span>
+          <span class="intel-label">Critical</span>
+          <span class="intel-val c-critical" id="s-critical">—</span>
+        </div>
+        <div class="intel-row">
+          <span class="sev-dot high"></span>
+          <span class="intel-label">High</span>
+          <span class="intel-val c-high" id="s-high">—</span>
+        </div>
+        <div class="intel-row">
+          <span class="sev-dot medium"></span>
+          <span class="intel-label">Medium</span>
+          <span class="intel-val c-medium" id="s-medium">—</span>
+        </div>
+      </div>
+      <hr class="intel-divider">
+      <div class="intel-total">
+        <span class="text-xs text-3" id="total-label">7-day total</span>
+        <span class="intel-big" id="s-total">—</span>
+      </div>
+    </div>
+
+    <div class="intel-card">
+      <div class="intel-head">Intelligence</div>
+      <div class="intel-sub-rows">
+        <div class="intel-sub-row">
+          <div class="intel-sub-icon">C</div>
+          <span class="intel-label">CVEs tracked</span>
+          <span class="intel-val c-blue" id="s-cves">—</span>
+        </div>
+        <div class="intel-sub-row">
+          <div class="intel-sub-icon">K</div>
+          <span class="intel-label">In CISA KEV</span>
+          <span class="intel-val c-critical" id="s-kev">—</span>
+        </div>
+        <div class="intel-sub-row">
+          <div class="intel-sub-icon">I</div>
+          <span class="intel-label">IOCs extracted</span>
+          <span class="intel-val" id="s-iocs">—</span>
+        </div>
+      </div>
+      <hr class="intel-divider" style="margin-top:14px">
+      <div class="intel-total">
+        <span class="text-xs text-3">Today</span>
+        <span class="intel-big" id="s-today">—</span>
+      </div>
+    </div>
+
+    <div class="intel-card">
+      <div class="intel-head">Coverage</div>
+      <div class="intel-sub-rows">
+        <div class="intel-sub-row">
+          <div class="intel-sub-icon">B</div>
+          <span class="intel-label">Banking threats</span>
+          <span class="intel-val c-blue" id="sec-banking">—</span>
+        </div>
+        <div class="intel-sub-row">
+          <div class="intel-sub-icon">G</div>
+          <span class="intel-label">Government threats</span>
+          <span class="intel-val" style="color:var(--govt)" id="sec-government">—</span>
+        </div>
+        <div class="intel-sub-row">
+          <div class="intel-sub-icon">H</div>
+          <span class="intel-label">Healthcare threats</span>
+          <span class="intel-val c-low" id="sec-healthcare">—</span>
+        </div>
+      </div>
+      <hr class="intel-divider" style="margin-top:14px">
+      <div class="intel-total">
+        <span class="text-xs text-3">Feeds active</span>
+        <span class="intel-big" id="s-feeds">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Latest threats -->
+  <div class="section-head mb-3">
+    <div class="section-title">Latest Threats</div>
+    <a class="text-xs text-2" href="/threats.html">View all</a>
+  </div>
+  <div class="card mb-6">
+    <div id="latest-threats">
+      <div class="empty">
+        <div class="empty-title">No threats yet</div>
+        <div class="empty-sub">Click Sync Now to fetch your first batch.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-grid mb-6">
+    <div class="card">
+      <div class="card-head"><div class="card-title">Threat Activity</div></div>
+      <div style="padding:16px"><canvas id="chart-timeline" style="max-height:180px"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">By Type</div></div>
+      <div style="padding:16px"><canvas id="chart-types" style="max-height:180px"></canvas></div>
+    </div>
+  </div>
+
+  <div class="bottom-grid">
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">Critical CVEs</div>
+        <a class="card-link" href="/iocs.html">All IOCs</a>
+      </div>
+      <div id="critical-cves">
+        <div class="empty"><div class="empty-title">No CVEs yet</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">Active Threat Actors</div></div>
+      <div id="top-actors">
+        <div class="empty"><div class="empty-title">No actors yet</div></div>
+      </div>
+    </div>
+  </div>
+
+</main>
 
 <div id="search-overlay" class="search-overlay hidden">
   <div id="search-results"></div>
 </div>
-
 <div class="toast-wrap" id="toasts"></div>
 <script src="/js/common.js"></script>
 <script src="/js/charts.js"></script>

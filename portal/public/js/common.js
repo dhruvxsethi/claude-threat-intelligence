@@ -22,8 +22,8 @@ function sevBadge(sev) {
 
 // Sector badge
 function secBadge(s) {
-  const icons = { banking: '🏦', government: '🏛️', healthcare: '🏥' };
-  return `<span class="badge badge-${s}">${icons[s] || ''} ${s}</span>`;
+  const labels = { banking: 'Banking', government: 'Government', healthcare: 'Healthcare' };
+  return `<span class="badge badge-${s}">${labels[s] || s}</span>`;
 }
 
 // Time helpers

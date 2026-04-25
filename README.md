@@ -1,195 +1,136 @@
-# Claude Threat Intelligence Platform
+# Sentinel — Threat Intelligence Platform
 
-AI-powered global threat intelligence. Claude reads 32 security feeds every 3 hours, extracts structured data from every article, and serves a live portal that updates automatically.
-
-**Claude IS the engine.** No AlienVault. No OTX. Every article is sent to Claude Sonnet which extracts CVEs, IOCs, MITRE ATT&CK TTPs, threat actors, sector impact, and credibility scores.
+AI-powered threat intelligence. Reads 32+ security feeds every hour, extracts CVEs / IOCs / TTPs / threat actors via Claude or Ollama, and serves a live portal at `localhost:3000`.
 
 ---
 
-## How to Run
+## Quick Start
 
 ```bash
-# 1. Install dependencies (once)
 npm install
-
-# 2. Add your Anthropic API key
-echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
-
-# 3. Start the portal (keep this running)
-node portal/server.mjs
-
-# 4. First sync (run in a separate terminal)
-node scripts/run-pipeline.mjs
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env   # get from console.anthropic.com
+node portal/server.mjs                         # start portal (keep running)
+node scripts/run-pipeline.mjs                  # first sync (separate terminal)
 ```
 
-The portal runs at **http://localhost:3000**. Keep `server.mjs` running — it serves the portal and automatically triggers the pipeline every 3 hours.
+Portal: **http://localhost:3000**. After each sync, the UI refreshes automatically via SSE — no page reload needed.
 
 ---
 
-## Why Do I Need an Anthropic API Key?
+## Using Ollama (free, local)
 
-Claude is the intelligence engine. It reads the raw article text and extracts all the structured threat data. Without the key, feeds are fetched but nothing is analyzed — the threat database stays empty.
+No Anthropic key needed if you have Ollama running locally.
 
-**Get your key:** https://console.anthropic.com → API Keys → Create Key
+```bash
+ollama pull qwen2.5:7b    # ~4.7 GB — good balance on M4 MacBook
+# or
+ollama pull qwen2.5:14b   # ~9 GB — better extraction quality
+```
 
-Cost: ~$0.001–$0.003 per article with Claude Sonnet. A typical 3-hour run (50 articles) costs under $0.10. Prompt caching reduces token costs by ~80%.
+Add to `.env`:
+```
+OLLAMA_MODEL=qwen2.5:7b
+```
 
-No other API keys needed — NVD, CISA, GitHub, and all RSS feeds are free and unauthenticated.
+The pipeline switches automatically. No API costs.
+
+---
+
+## How It Works
+
+```
+32+ RSS feeds + NVD/CISA/GitHub APIs
+         ↓
+  portal/server.mjs       ← Express server + hourly cron
+         ↓
+  scripts/run-pipeline.mjs
+    1. Fetch NVD CVEs + CISA KEV (vulnerability APIs)
+    2. Poll RSS feeds (30+ sources)
+    3. Scrape full article content
+    4. Deduplicate by URL + content hash
+    5. Send to Claude/Ollama → structured JSON (CVEs, IOCs, TTPs, actors)
+    6. Normalize + save to SQLite
+    7. Notify portal → SSE → UI auto-refreshes
+         ↓
+     SQLite (data/threats.db)
+         ↓
+     Portal UI (localhost:3000)
+```
+
+**"Sync Now" button** — triggers the pipeline immediately from the browser. The portal runs it as a child process and broadcasts a `pipeline_done` event when it's done, causing all connected browsers to reload their data without a page refresh.
+
+**Hourly cron** — runs automatically inside `portal/server.mjs` every hour as long as the portal is running.
+
+**Claude scheduled task** — a separate cloud-based hourly trigger that runs when your laptop is closed or the portal is stopped. It invokes the pipeline directly.
+
+**Ollama** — the pipeline calls Ollama's local API (`http://localhost:11434`) instead of Anthropic's API when `OLLAMA_MODEL` is set. Ollama must be running separately (`ollama serve`).
+
+---
+
+## Sharing / Remote Access
+
+Sentinel uses a local SQLite file and a persistent Node.js server, so it **cannot be deployed to Vercel** (Vercel is serverless + no persistent file system).
+
+To let someone else see your data:
+
+```bash
+npx ngrok http 3000
+# → gives you a public URL like https://abc123.ngrok.io
+```
+
+Anyone with that URL sees your live portal in real time.
 
 ---
 
 ## Portal Pages
 
-| Page | URL | What you see |
-|---|---|---|
-| **Dashboard** | `localhost:3000` | Metrics strip (critical/high/medium/CVEs/IOCs), latest threats table, charts, top CVEs, threat actors |
-| **Threat Feed** | `localhost:3000/threats.html` | Full paginated list with filters (severity, sector, type, date range) |
-| **Sectors** | `localhost:3000/sectors.html` | Banking / Government / Healthcare breakdowns — top CVEs, actors, threat tables |
-| **IOC Explorer** | `localhost:3000/iocs.html` | All extracted indicators (IPs, domains, hashes…), filterable, CSV export |
-| **Feed Health** | `localhost:3000/feeds.html` | Per-feed status, last success, run history |
-| **Threat Detail** | Click any threat title | Full CVEs, IOCs, TTPs, actors, sector impact scores, related threats |
-
----
-
-## What's Automated
-
-| What | How | When |
-|---|---|---|
-| Full pipeline — all 32 feeds + vulnerability APIs | Built-in cron in `portal/server.mjs` | Every 3 hours (0:00, 3:00, 6:00… UTC) |
-| Portal data refresh | Server-Sent Events (SSE) | Real-time on pipeline completion — no page reload |
-| Cross-threat correlation | Built into pipeline | Every run |
-| Credibility scoring | Built into pipeline | Every article |
-| Deduplication | URL + content hash | Every article (skips already-seen content) |
-
-**You only need `node portal/server.mjs` running.** Everything else is automatic.
-
-The **↻ Sync Now** button in the sidebar manually triggers an immediate pipeline run identical to the scheduled one.
-
----
-
-## Skill Commands (in Claude)
-
-Use these slash commands inside a Claude session to interact with the platform directly:
-
-| Command | What it does |
+| Page | URL |
 |---|---|
-| `/ingest` | Trigger a full pipeline run from within Claude |
-| `/analyze <url>` | Deep-analyze a single URL — full IOC/TTP/actor extraction |
-| `/brief banking` | Generate a sector threat brief (banking, government, or healthcare) |
-| `/hunt APT28` | Search all threats by actor name, CVE ID, or IOC value |
-| `/ioc export` | Export the current IOC list as a CSV |
-| `/stats` | Pipeline statistics, feed health, coverage gaps |
-| `/feeds discover` | Ask Claude to suggest new feed sources to add |
+| Dashboard | `localhost:3000` |
+| Threat Feed | `localhost:3000/threats.html` |
+| Sectors | `localhost:3000/sectors.html` |
+| IOC Explorer | `localhost:3000/iocs.html` |
+| Feed Health | `localhost:3000/feeds.html` |
+| Threat Detail | click any threat title |
 
 ---
 
-## What Claude Extracts Per Article
-
-| Category | What's extracted |
-|---|---|
-| **CVEs** | ID, CVSS score + vector, severity, affected products, patch status, in CISA KEV |
-| **IOCs** | IP, IPv6, domain, subdomain, URL, email, MD5, SHA1, SHA256, SHA512, file path, registry key, mutex, user-agent, ASN, Bitcoin address, YARA rule |
-| **MITRE ATT&CK** | Tactic, technique ID (e.g. T1059), sub-technique, procedure description |
-| **Threat Actors** | Name, aliases, origin country, motivation, sophistication level |
-| **Context** | Malware families, affected products, targeted geography, kill chain stage |
-| **Sector Impact** | Per-sector (banking/government/healthcare) risk score + reasoning |
-| **Credibility** | 0–100 score: source tier (40pts) + technical richness (30pts) + corroboration (20pts) + specificity (10pts) |
-| **Summary** | 3-sentence executive brief |
-
----
-
-## Feed Sources (32 total)
-
-| Tier | Sources |
-|---|---|
-| 1 — Official | CISA KEV (JSON API), NIST NVD (JSON API), GitHub Security Advisories, UK NCSC |
-| 2 — Major vendors | CrowdStrike, Mandiant, Cisco Talos, Palo Alto Unit 42, Microsoft Security, Google TAG, Kaspersky, Check Point, Proofpoint, SentinelOne, Recorded Future |
-| 3 — Security news | Krebs on Security, The Hacker News, Bleeping Computer, SecurityWeek, Dark Reading, CyberScoop, SANS ISC, Schneier on Security, Infosecurity Magazine, Sophos Naked Security |
-| 4 — Sector-specific | BankInfoSecurity, GovInfoSecurity, Healthcare IT News, HIPAA Journal, Finextra |
-| 5 — Supplementary | Graham Cluley, Threatpost |
-
-**Note:** CISA advisory RSS (`/cybersecurity-advisories/feed`) is disabled — it returns 404. CISA KEV JSON API covers the same data.
-
----
-
-## Architecture
+## Slash Commands (in Claude)
 
 ```
-32 feeds (CISA KEV JSON, NVD JSON, GitHub Advisories, 28 RSS feeds)
-  │
-  ├─ ingestion/feed-fetcher.mjs     poll all feeds in parallel (no slot rotation)
-  ├─ ingestion/article-scraper.mjs  fetch full article content + extract IOC hints
-  ├─ ingestion/dedup.mjs            skip seen URLs and duplicate content (SHA256 hash)
-  │
-  ├─ intelligence/analyzer.mjs      Claude Sonnet extraction (THE BRAIN)
-  ├─ intelligence/normalizer.mjs    enforce schema, validate fields
-  ├─ intelligence/credibility.mjs   0–100 credibility score
-  ├─ intelligence/correlator.mjs    link threats sharing CVE/IOC/actor/malware
-  │
-  ├─ data/threats.db                SQLite (WAL mode) — 10 normalized tables
-  │
-  ├─ portal/server.mjs              Express API + SSE + built-in cron scheduler
-  └─ portal/public/                 Dashboard UI
+/ingest          — run full pipeline now
+/analyze <url>   — deep-analyze a single URL
+/brief banking   — sector threat brief
+/hunt APT28      — search by actor, CVE, or IOC
+/ioc export      — export IOC list as CSV
+/stats           — feed health and pipeline stats
 ```
 
-### Database Tables
-`threats` · `threat_cves` · `threat_iocs` · `threat_ttps` · `threat_actors` · `feed_runs` · `articles` · `corroborations` · `feed_health` · `ioc_index`
+---
+
+## Config
+
+| File | Purpose |
+|---|---|
+| `config/feeds.yml` | All 32+ feed sources — add/disable here |
+| `config/settings.yml` | Model, max articles per run, intervals |
+| `.env` | `ANTHROPIC_API_KEY` or `OLLAMA_MODEL` + `PORT` |
 
 ---
 
-## Configuration Files
+## Feed Sources
 
-| File | Purpose | Auto-overwritten? |
-|---|---|---|
-| `config/feeds.yml` | All 32 feed sources — add/disable feeds here | No |
-| `config/sectors.yml` | Sector keywords and regulatory frameworks | No |
-| `config/settings.yml` | Claude model, max articles per run, credibility weights | No |
-| `.env` | `ANTHROPIC_API_KEY` and optional `PORT` | No |
+- **APIs:** CISA KEV, NIST NVD, GitHub Advisories
+- **Tier 1 (vendors):** CrowdStrike, Mandiant, Talos, Unit 42, Microsoft, Google TAG, Kaspersky, Check Point, Proofpoint, SentinelOne, Recorded Future, Rapid7
+- **Tier 2 (news):** Krebs, The Hacker News, Bleeping Computer, SecurityWeek, Dark Reading, CyberScoop, SANS ISC, Schneier, Infosecurity Magazine, Sophos
+- **Tier 3 (sector):** BankInfoSecurity, GovInfoSecurity, Healthcare IT News, HIPAA Journal
 
 ---
 
-## Sectors Covered
-
-- 🏦 **Banking** — financial institutions, payment processors, crypto exchanges, fintech
-- 🏛️ **Government** — federal agencies, defense contractors, critical infrastructure
-- 🏥 **Healthcare** — hospitals, pharma, medical devices, health insurers, biotech
-
----
-
-## Manual Commands
+## Commands
 
 ```bash
-node portal/server.mjs           # start portal + scheduler (keep running)
-node scripts/run-pipeline.mjs    # manual full sync — all feeds + APIs
-node scripts/doctor.mjs          # health check — validates config, DB, API key
+node portal/server.mjs         # start portal + hourly scheduler
+node scripts/run-pipeline.mjs  # manual full sync
+node scripts/setup.mjs         # initialize database + validate config
 ```
-
----
-
-## Known Issues / Status
-
-| Item | Status |
-|---|---|
-| CISA advisory RSS | Disabled — URL returns 404, covered by KEV JSON |
-| Slot A/B rotation | Removed — single unified run fetches everything |
-| Portal auto-update | Working via SSE |
-| GitHub Advisories API rate limiting | No auth token — rate limited to 60 req/hr (fine for current usage) |
-
----
-
-## FAQ
-
-**Does the website update automatically when the pipeline runs?**
-Yes. SSE pushes a notification to all open browser tabs the moment the pipeline finishes. The dashboard refreshes its data immediately — no page reload.
-
-**What's the "↻ Sync Now" button?**
-It triggers the exact same pipeline that runs on the 3-hour schedule. Use it when you want fresh data immediately.
-
-**Can I add more feeds?**
-Edit `config/feeds.yml` and follow the existing format. Set `enabled: true`. The next pipeline run (or Sync Now) picks it up automatically.
-
-**What if a feed is failing?**
-Check `localhost:3000/feeds.html` for the error message. If the URL changed, update it in `config/feeds.yml`. If it's consistently broken, set `enabled: false`.
-
-**How much does it cost?**
-Claude Sonnet with prompt caching is ~$0.001–$0.003 per article. 50 articles = under $0.10 per run. 8 runs/day = under $0.80/day.

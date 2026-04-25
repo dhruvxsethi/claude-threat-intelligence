@@ -2,107 +2,98 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Threat Feed — CTI</title>
+  <title>Radar — Threats</title>
   <link rel="stylesheet" href="/css/main.css">
 </head>
 <body>
-<div class="app">
-  <nav class="sidebar">
-    <div class="logo">
-      <div class="logo-icon">🛡</div>
-      <div class="logo-text">
-        <div class="logo-name">CTI Platform</div>
-        <div class="logo-sub">by Claude AI</div>
-      </div>
-      <div class="live-pill"><span class="live-dot"></span>Live</div>
-    </div>
-    <div class="nav">
-      <div class="nav-label">Intelligence</div>
-      <a class="nav-item" href="/"><span class="nav-icon">⚡</span>Dashboard</a>
-      <a class="nav-item active" href="/threats.html"><span class="nav-icon">🛡</span>Threat Feed</a>
-      <a class="nav-item" href="/sectors.html"><span class="nav-icon">🏢</span>Sectors</a>
-      <a class="nav-item" href="/iocs.html"><span class="nav-icon">🔍</span>IOC Explorer</a>
-      <div class="nav-label" style="margin-top:6px">System</div>
-      <a class="nav-item" href="/feeds.html"><span class="nav-icon">📡</span>Feed Health</a>
-    </div>
-    <div class="sidebar-footer">
-      <button class="btn btn-ghost btn-sm" onclick="triggerPipeline()" style="width:100%;margin-bottom:10px;justify-content:center">↻ Sync Now</button>
-      <div class="meta-row">
-        <span class="text-xs text-3">Schedule</span>
-        <span class="text-xs text-2">Every 3 hours</span>
-      </div>
-    </div>
-  </nav>
-  <div class="main">
-    <div class="topbar">
-      <div class="page-title">Threat Feed</div>
-      <div class="search-wrap">
-        <span style="color:var(--text-3)">⌕</span>
-        <input type="text" id="global-search" placeholder="Filter threats…" oninput="filterThreats(this.value)">
-      </div>
-    </div>
-    <div class="content">
-      <div class="filters">
-        <select class="filter-select" id="f-severity" onchange="applyFilters()">
-          <option value="">All Severities</option>
-          <option value="critical">Critical</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
-        <select class="filter-select" id="f-sector" onchange="applyFilters()">
-          <option value="">All Sectors</option>
-          <option value="banking">🏦 Banking</option>
-          <option value="government">🏛️ Government</option>
-          <option value="healthcare">🏥 Healthcare</option>
-        </select>
-        <select class="filter-select" id="f-type" onchange="applyFilters()">
-          <option value="">All Types</option>
-          <option value="ransomware">Ransomware</option>
-          <option value="apt">APT</option>
-          <option value="phishing">Phishing</option>
-          <option value="vulnerability">Vulnerability</option>
-          <option value="data_breach">Data Breach</option>
-          <option value="supply_chain">Supply Chain</option>
-          <option value="zero_day">Zero Day</option>
-          <option value="ddos">DDoS</option>
-        </select>
-        <select class="filter-select" id="f-days" onchange="applyFilters()">
-          <option value="1">Last 24h</option>
-          <option value="7" selected>Last 7 days</option>
-          <option value="14">Last 14 days</option>
-          <option value="30">Last 30 days</option>
-        </select>
-        <label class="filter-check"><input type="checkbox" id="f-has-cves" onchange="applyFilters()"> Has CVEs</label>
-        <label class="filter-check"><input type="checkbox" id="f-has-iocs" onchange="applyFilters()"> Has IOCs</label>
-        <div class="flex-1"></div>
-        <span class="text-xs text-3" id="results-count"></span>
-      </div>
-      <div class="card">
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th onclick="sortBy('severity')">Severity</th>
-                <th onclick="sortBy('title')">Threat</th>
-                <th>Sectors</th>
-                <th>Type</th>
-                <th onclick="sortBy('credibility_score')">Confidence</th>
-                <th>IOCs</th>
-                <th>CVEs</th>
-                <th onclick="sortBy('ingested_at')">Ingested</th>
-              </tr>
-            </thead>
-            <tbody id="threats-tbody">
-              <tr><td colspan="8" style="padding:40px;text-align:center;color:var(--text-3)">Loading…</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="pagination" id="pagination"></div>
-      </div>
-    </div>
+
+<nav class="navbar">
+  <div class="navbar-brand">
+    <div class="brand-mark"></div>
+    <span class="brand-name">Radar</span>
+    <div class="live-indicator"><span class="live-dot"></span>Live</div>
   </div>
-</div>
+  <div class="navbar-links">
+    <a href="/" class="nav-link">Dashboard</a>
+    <a href="/threats.html" class="nav-link active">Threats</a>
+    <a href="/sectors.html" class="nav-link">Sectors</a>
+    <a href="/iocs.html" class="nav-link">IOCs</a>
+    <a href="/feeds.html" class="nav-link">Feeds</a>
+  </div>
+  <div class="navbar-actions">
+    <div class="search-wrap">
+      <span class="search-icon">⌕</span>
+      <input type="text" id="global-search" placeholder="Filter threats…" oninput="filterThreats(this.value)">
+    </div>
+    <button class="btn-sync" onclick="triggerPipeline()">Sync Now</button>
+  </div>
+</nav>
+
+<main class="page">
+  <div class="page-header">
+    <div class="page-title">Threat Feed</div>
+    <span class="text-xs text-3" id="results-count"></span>
+  </div>
+
+  <div class="filters mb-4">
+    <select class="filter-select" id="f-severity" onchange="applyFilters()">
+      <option value="">All Severities</option>
+      <option value="critical">Critical</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+    <select class="filter-select" id="f-sector" onchange="applyFilters()">
+      <option value="">All Sectors</option>
+      <option value="banking">Banking</option>
+      <option value="government">Government</option>
+      <option value="healthcare">Healthcare</option>
+    </select>
+    <select class="filter-select" id="f-type" onchange="applyFilters()">
+      <option value="">All Types</option>
+      <option value="ransomware">Ransomware</option>
+      <option value="apt">APT</option>
+      <option value="phishing">Phishing</option>
+      <option value="vulnerability">Vulnerability</option>
+      <option value="data_breach">Data Breach</option>
+      <option value="supply_chain">Supply Chain</option>
+      <option value="zero_day">Zero Day</option>
+      <option value="ddos">DDoS</option>
+    </select>
+    <select class="filter-select" id="f-days" onchange="applyFilters()">
+      <option value="1">Last 24h</option>
+      <option value="7" selected>Last 7 days</option>
+      <option value="14">Last 14 days</option>
+      <option value="30">Last 30 days</option>
+    </select>
+    <label class="filter-check"><input type="checkbox" id="f-has-cves" onchange="applyFilters()"> Has CVEs</label>
+    <label class="filter-check"><input type="checkbox" id="f-has-iocs" onchange="applyFilters()"> Has IOCs</label>
+  </div>
+
+  <div class="card">
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th onclick="sortBy('severity')">Severity</th>
+            <th onclick="sortBy('title')">Threat</th>
+            <th>Sectors</th>
+            <th>Type</th>
+            <th onclick="sortBy('credibility_score')">Confidence</th>
+            <th>IOCs</th>
+            <th>CVEs</th>
+            <th onclick="sortBy('ingested_at')">Ingested</th>
+          </tr>
+        </thead>
+        <tbody id="threats-tbody">
+          <tr><td colspan="8" style="padding:40px;text-align:center;color:var(--text-3)">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+</main>
+
 <div class="toast-wrap" id="toasts"></div>
 <script src="/js/common.js"></script>
 <script src="/js/threats.js"></script>

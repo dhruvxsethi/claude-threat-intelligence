@@ -1,24 +1,29 @@
 #!/usr/bin/env node
 /**
- * Main ingestion pipeline runner.
- * Fetches ALL feeds and vulnerability APIs every run — no slot rotation.
- * Streams results to the portal via SSE as each threat is analyzed.
+ * Sentinel Threat Intelligence — ingestion pipeline
+ * Fetches all feeds + vulnerability APIs, analyzes via Ollama or Anthropic, saves to SQLite.
  */
 
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync } from 'fs';
 
-// Load .env manually
+// ── Load .env FIRST before any other imports use process.env ─────────────────
 const __envDir = dirname(fileURLToPath(import.meta.url));
 const envPath = join(__envDir, '..', '.env');
 if (existsSync(envPath)) {
   readFileSync(envPath, 'utf8').split('\n').forEach(line => {
-    const [k, ...v] = line.split('=');
-    if (k?.trim() && !process.env[k.trim()]) process.env[k.trim()] = v.join('=').trim();
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx < 0) return;
+    const k = trimmed.slice(0, eqIdx).trim();
+    const v = trimmed.slice(eqIdx + 1).trim();
+    if (k && !process.env[k]) process.env[k] = v;
   });
 }
 
+import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import chalk from 'chalk';
 import { getDb, migrate } from './migrate.mjs';
@@ -37,6 +42,21 @@ const ok   = msg => log(`  ✓ ${msg}`, 'green');
 const warn = msg => log(`  ⚠ ${msg}`, 'yellow');
 const err  = msg => log(`  ✗ ${msg}`, 'red');
 const info = msg => log(`  → ${msg}`, 'cyan');
+
+// Notify portal that the pipeline is done (triggers browser SSE refresh)
+async function notifyPortalDone(threats, errors) {
+  const port = process.env.PORT || 3000;
+  try {
+    await fetch(`http://localhost:${port}/api/pipeline/done`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ threats_created: threats, errors }),
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch {
+    // Portal not running (e.g. CLI-only run) — that's fine, skip notification
+  }
+}
 
 async function saveThreat(db, threat) {
   const insert = db.prepare(`
@@ -89,14 +109,25 @@ async function saveThreat(db, threat) {
 
   const saveAll = db.transaction(() => {
     const { _cves, _iocs, _ttps, _actors, ...threatRecord } = threat;
-    insert.run(threatRecord);
+    let result;
+    try {
+      result = insert.run(threatRecord);
+    } catch (e) {
+      warn(`saveThreat constraint error: ${e.message} — ${threatRecord.source_url?.slice(0, 60)}`);
+      return false;
+    }
+    if (result.changes === 0) {
+      warn(`saveThreat skipped (duplicate): ${threatRecord.source_url?.slice(0, 60)}`);
+      return false;
+    }
     (_cves   || []).forEach(c => { try { insertCve.run(c);   } catch {} });
     (_iocs   || []).forEach(i => { try { insertIoc.run(i);   } catch {} });
     (_ttps   || []).forEach(t => { try { insertTtp.run(t);   } catch {} });
     (_actors || []).forEach(a => { try { insertActor.run(a); } catch {} });
+    return true;
   });
 
-  saveAll();
+  return saveAll();
 }
 
 async function processArticles(db, items, dedup, correlator, settings) {
@@ -104,64 +135,93 @@ async function processArticles(db, items, dedup, correlator, settings) {
   const newItems = dedup.filterNewItems(items);
   let analyzed = 0, threats = 0, errors = 0;
 
-  info(`${newItems.length} new articles of ${items.length} total`);
+  info(`${newItems.length} new articles of ${items.length} total to process`);
 
   for (const item of newItems) {
     if (analyzed >= maxAnalyze) {
-      warn(`Reached max analysis limit (${maxAnalyze}). Remaining queued for next run.`);
+      warn(`Reached analysis limit (${maxAnalyze}). Rest queued for next run.`);
       break;
     }
 
     try {
       const scraped = await scrapeArticle(item.url);
-      if (!scraped.success) { dedup.markSkipped(item.url, scraped.error); continue; }
-      if (scraped.content_length < 500) { dedup.markSkipped(item.url, 'content_too_short'); continue; }
 
-      dedup.registerArticle(item.url, item.feed_id, item.title, item.published_at, scraped.content_hash);
+      let content, contentLength, contentHash, cve_mentions, ip_mentions, hash_mentions;
 
-      if (!dedup.isNewContent(scraped.content_hash)) {
+      if (scraped.success && (scraped.content_length || 0) >= 300) {
+        content       = scraped.content;
+        contentLength = scraped.content_length;
+        contentHash   = scraped.content_hash;
+        cve_mentions  = scraped.cve_mentions;
+        ip_mentions   = scraped.ip_mentions;
+        hash_mentions = scraped.hash_mentions;
+      } else {
+        // Fall back to RSS title + description when scraping fails
+        const fallback = [item.title, item.description].filter(s => s && s.trim()).join('\n\n');
+        if (fallback.length < 80) {
+          dedup.registerArticle(item.url, item.feed_id, item.title, item.published_at, null);
+          dedup.markSkipped(item.url, scraped.success ? 'content_too_short' : (scraped.error || 'scrape_failed'));
+          continue;
+        }
+        content       = fallback;
+        contentLength = fallback.length;
+        contentHash   = createHash('sha256').update(fallback).digest('hex');
+        cve_mentions  = [];
+        ip_mentions   = [];
+        hash_mentions = [];
+        info(`RSS fallback (${contentLength}ch): ${item.url.slice(0, 60)}`);
+      }
+
+      // ── CRITICAL: check for duplicate content BEFORE registering ─────────
+      // If we register first, isNewContent will always find it and skip everything.
+      const isNewContent = dedup.isNewContent(contentHash);
+      dedup.registerArticle(item.url, item.feed_id, item.title, item.published_at, contentHash);
+
+      if (!isNewContent) {
         dedup.markSkipped(item.url, 'duplicate_content');
         continue;
       }
 
       const articleForAnalysis = {
-        url: item.url,
-        title: item.title || scraped.title,
-        content: scraped.content,
-        published_at: item.published_at || scraped.published_at,
-        content_hash: scraped.content_hash,
-        content_length: scraped.content_length,
-        source_name: item.feed_name,
-        cve_mentions: scraped.cve_mentions,
-        ip_mentions: scraped.ip_mentions,
-        hash_mentions: scraped.hash_mentions,
+        url:            item.url,
+        title:          item.title || scraped?.title || '',
+        content,
+        published_at:   item.published_at || scraped?.published_at,
+        content_hash:   contentHash,
+        content_length: contentLength,
+        source_name:    item.feed_name,
+        cve_mentions,
+        ip_mentions,
+        hash_mentions,
       };
 
       const analysis = await analyzeArticle(articleForAnalysis, item.source_credibility || 70);
       analyzed++;
 
       if (!analysis.success) {
-        err(`Analysis failed for ${item.url}: ${analysis.error}`);
+        err(`Analysis failed: ${analysis.error} — ${item.url.slice(0, 60)}`);
         errors++;
         continue;
       }
 
       const threat = normalizeArticleThreat(analysis.data, articleForAnalysis, {
-        name: item.feed_name,
-        source_tier: item.source_tier,
-        source_credibility: item.source_credibility,
-        rotation_slot: 'ALL',
+        name:              item.feed_name,
+        source_tier:       item.source_tier,
+        source_credibility:item.source_credibility,
+        rotation_slot:     'BOTH',
       });
 
-      await saveThreat(db, threat);
-      dedup.markAnalyzed(item.url, threat.id);
-      correlator.correlate(threat.id);
-      correlator.updateIocIndex(threat._iocs || [], threat.id);
+      const saved = await saveThreat(db, threat);
+      if (saved) {
+        dedup.markAnalyzed(item.url, threat.id);
+        correlator.correlate(threat.id);
+        correlator.updateIocIndex(threat._iocs || [], threat.id);
+        threats++;
+        ok(`[${(threat.severity || 'unknown').toUpperCase()}] ${threat.title.slice(0, 80)}`);
+      }
 
-      threats++;
-      ok(`[${threat.severity?.toUpperCase()}] ${threat.title.slice(0, 80)}`);
-
-      await new Promise(r => setTimeout(r, 500));
+      // Brief pause between analysis calls
+      await new Promise(r => setTimeout(r, 200));
 
     } catch (e) {
       err(`Error processing ${item.url}: ${e.message}`);
@@ -175,32 +235,39 @@ async function processArticles(db, items, dedup, correlator, settings) {
 async function processVulnerabilityApis(db, correlator) {
   log('\n→ Fetching vulnerability APIs (NVD, CISA KEV, GitHub)...', 'blue');
 
-  const [nvdResult, kevResult, ghResult] = await Promise.all([
+  const [nvdResult, kevResult] = await Promise.all([
     fetchNvdCves(),
     fetchCisaKev(),
-    fetchGithubAdvisories(),
   ]);
 
   let threatsCreated = 0;
   const kevIds = new Set((kevResult.vulnerabilities || []).map(v => v.cveID));
 
-  if (nvdResult.success) {
-    info(`NVD: ${nvdResult.cves.length} new CVEs`);
+  // NVD CVEs
+  if (nvdResult.success && nvdResult.cves.length > 0) {
+    info(`NVD: ${nvdResult.cves.length} recent CVEs`);
     for (const cve of nvdResult.cves) {
       cve.in_kev = kevIds.has(cve.cve_id);
       const analysis = await analyzeNvdCve(cve, kevIds);
       if (!analysis.success) { err(`NVD analysis failed (${cve.cve_id}): ${analysis.error}`); continue; }
       const threat = normalizeCveThreat(analysis.data, cve, analysis.source_url);
-      await saveThreat(db, threat);
-      correlator.correlate(threat.id);
-      threatsCreated++;
-      ok(`NVD: ${cve.cve_id} (CVSS ${cve.cvss_score || 'N/A'})`);
-      await new Promise(r => setTimeout(r, 300));
+      const saved = await saveThreat(db, threat);
+      if (saved) {
+        correlator.correlate(threat.id);
+        threatsCreated++;
+        ok(`NVD: ${cve.cve_id} (CVSS ${cve.cvss_score || 'N/A'})`);
+      }
+      await new Promise(r => setTimeout(r, 200));
     }
+  } else if (nvdResult.success) {
+    info('NVD: 0 new CVEs in the last hour');
+  } else {
+    warn(`NVD fetch failed: ${nvdResult.error}`);
   }
 
+  // CISA KEV
   if (kevResult.success && kevResult.vulnerabilities.length > 0) {
-    info(`CISA KEV: ${kevResult.vulnerabilities.length} new entries`);
+    info(`CISA KEV: ${kevResult.vulnerabilities.length} entries added in last 7 days`);
     for (const vuln of kevResult.vulnerabilities) {
       const existing = db.prepare('SELECT id FROM threat_cves WHERE cve_id = ?').get(vuln.cveID);
       if (existing) {
@@ -210,18 +277,29 @@ async function processVulnerabilityApis(db, correlator) {
       const analysis = await analyzeCisaKevEntry(vuln);
       if (!analysis.success) { err(`KEV analysis failed (${vuln.cveID}): ${analysis.error}`); continue; }
       const cve = {
-        cve_id: vuln.cveID, cvss_score: null, cvss_vector: null,
-        cvss_severity: null, description: vuln.shortDescription,
-        published_date: vuln.dateAdded, in_kev: true, exploited_in_wild: true,
+        cve_id:           vuln.cveID,
+        cvss_score:       null,
+        cvss_vector:      null,
+        cvss_severity:    null,
+        description:      vuln.shortDescription,
+        published_date:   vuln.dateAdded,
+        in_kev:           true,
+        exploited_in_wild:true,
       };
-      const threat = normalizeCveThreat(analysis.data, cve, analysis.source_url);
+      // Use CVE-specific URL so each KEV entry has a unique source_url
+      const kevSourceUrl = `https://nvd.nist.gov/vuln/detail/${vuln.cveID}`;
+      const threat = normalizeCveThreat(analysis.data, cve, kevSourceUrl);
       threat.credibility_score = 95;
-      await saveThreat(db, threat);
-      correlator.correlate(threat.id);
-      threatsCreated++;
-      ok(`KEV: ${vuln.cveID} — ${vuln.vulnerabilityName}`);
-      await new Promise(r => setTimeout(r, 300));
+      const saved = await saveThreat(db, threat);
+      if (saved) {
+        correlator.correlate(threat.id);
+        threatsCreated++;
+        ok(`KEV: ${vuln.cveID} — ${vuln.vulnerabilityName}`);
+      }
+      await new Promise(r => setTimeout(r, 200));
     }
+  } else if (kevResult.success) {
+    info('CISA KEV: no new entries this week');
   }
 
   return threatsCreated;
@@ -234,33 +312,42 @@ async function run() {
 
   const settings = loadSettings();
 
+  const backend = process.env.OLLAMA_MODEL
+    ? `Ollama (${process.env.OLLAMA_MODEL})`
+    : process.env.ANTHROPIC_API_KEY
+      ? 'Anthropic Claude'
+      : null;
+
   log(`\n${'═'.repeat(60)}`, 'blue');
-  log(`  CLAUDE THREAT INTELLIGENCE — RUN ${runId}`, 'bold');
-  log(`  Time: ${new Date().toUTCString()}`, 'cyan');
+  log(`  SENTINEL — RUN ${runId}`, 'bold');
+  log(`  ${new Date().toUTCString()}`, 'cyan');
+  log(`  Backend: ${backend || 'NOT CONFIGURED'}`, backend ? 'cyan' : 'red');
   log(`${'═'.repeat(60)}\n`, 'blue');
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    err('ANTHROPIC_API_KEY is not set in .env — Claude analysis will fail for all articles.');
-    err('Add your key to .env: ANTHROPIC_API_KEY=sk-ant-...');
-    db.close(); return;
+  if (!backend) {
+    err('No AI backend configured. Add to .env:');
+    err('  OLLAMA_MODEL=qwen2.5:7b   (free, local — recommended)');
+    err('  ANTHROPIC_API_KEY=sk-ant-... (Anthropic API)');
+    db.close();
+    return;
   }
 
   const dedup = new Deduplicator(db);
   const correlator = new Correlator(db);
 
-  let totalArticles = 0, totalThreats = 0;
+  let totalArticles = 0, totalThreats = 0, totalErrors = 0;
 
   try {
-    // Always fetch vulnerability APIs
-    const vuln = await processVulnerabilityApis(db, correlator);
-    totalThreats += vuln;
+    // 1. Vulnerability APIs (NVD + CISA KEV)
+    const vulnThreats = await processVulnerabilityApis(db, correlator);
+    totalThreats += vulnThreats;
 
-    // Always fetch all RSS feeds
+    // 2. RSS feeds
     const { rssResults } = await runAllFeeds(db, info);
     const allItems = rssResults.flatMap(r =>
-      r.items.map(item => ({
+      (r.items || []).map(item => ({
         ...item,
-        source_tier: r.feed?.tier,
+        source_tier:        r.feed?.tier,
         source_credibility: r.feed?.source_credibility,
       }))
     );
@@ -268,14 +355,18 @@ async function run() {
 
     const { analyzed, threats, errors } = await processArticles(db, allItems, dedup, correlator, settings);
     totalThreats += threats;
+    totalErrors  += errors;
 
     log(`\n${'─'.repeat(60)}`, 'blue');
     log(`  Run ${runId} complete`, 'green');
-    log(`  Articles fetched:  ${totalArticles}`, 'white');
-    log(`  Articles analyzed: ${analyzed}`, 'white');
-    log(`  Threats created:   ${totalThreats}`, 'white');
-    if (errors > 0) log(`  Errors: ${errors}`, 'yellow');
+    log(`  RSS articles fetched:  ${totalArticles}`, 'white');
+    log(`  Articles analyzed:     ${analyzed}`, analyzed > 0 ? 'green' : 'white');
+    log(`  Threats saved:         ${totalThreats}`, totalThreats > 0 ? 'green' : 'white');
+    if (totalErrors > 0) log(`  Errors:                ${totalErrors}`, 'yellow');
     log(`${'─'.repeat(60)}\n`, 'blue');
+
+    // Notify portal so browsers auto-refresh
+    await notifyPortalDone(totalThreats, totalErrors);
 
   } catch (e) {
     err(`Fatal pipeline error: ${e.message}`);

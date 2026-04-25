@@ -68,7 +68,7 @@ feeds:
 
   - id: crowdstrike_blog
     name: "CrowdStrike Adversary Intelligence"
-    url: "https://www.crowdstrike.com/blog/category/threat-intelligence/feed/"
+    url: "https://www.crowdstrike.com/en-us/blog/feed/"
     type: rss
     tier: 2
     rotation_slot: B
@@ -88,7 +88,7 @@ feeds:
 
   - id: talos_intelligence
     name: "Cisco Talos Intelligence"
-    url: "https://blog.talosintelligence.com/feeds/posts/default"
+    url: "https://blog.talosintelligence.com/rss/"
     type: rss
     tier: 2
     rotation_slot: B
@@ -148,7 +148,7 @@ feeds:
 
   - id: proofpoint_threat
     name: "Proofpoint Threat Insight"
-    url: "https://www.proofpoint.com/us/blog/threat-insight/rss.xml"
+    url: "https://www.proofpoint.com/us/rss.xml"
     type: rss
     tier: 2
     rotation_slot: B
@@ -168,7 +168,7 @@ feeds:
 
   - id: recorded_future_blog
     name: "Recorded Future Intelligence"
-    url: "https://www.recordedfuture.com/blog/rss.xml"
+    url: "https://www.recordedfuture.com/feed"
     type: rss
     tier: 2
     rotation_slot: B
@@ -270,7 +270,7 @@ feeds:
 
   - id: sophos_naked_security
     name: "Sophos Naked Security"
-    url: "https://nakedsecurity.sophos.com/feed/"
+    url: "https://news.sophos.com/en-us/category/serious-security/feed/"
     type: rss
     tier: 3
     rotation_slot: B
@@ -327,8 +327,18 @@ feeds:
     tier: 4
     rotation_slot: B
     sectors: [banking]
-    enabled: true
+    enabled: false  # unreliable — frequent fetch errors
     source_credibility: 68
+
+  - id: rapid7_blog
+    name: "Rapid7 Threat Intel"
+    url: "https://www.rapid7.com/blog/rss/"
+    type: rss
+    tier: 2
+    rotation_slot: B
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 85
 
   # ─── TIER 5: SUPPLEMENTARY & COMMUNITY INTEL ────────────────────────────
 
@@ -349,7 +359,7 @@ feeds:
     tier: 5
     rotation_slot: B
     sectors: [banking, government, healthcare]
-    enabled: true
+    enabled: false  # dead — last post Aug 2022
     source_credibility: 70
 
 # Feed health tracking (auto-updated by pipeline)

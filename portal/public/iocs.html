@@ -2,85 +2,77 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IOC Explorer — CTI</title>
+  <title>Radar — IOC Explorer</title>
   <link rel="stylesheet" href="/css/main.css">
 </head>
 <body>
-<div class="app">
-  <nav class="sidebar">
-    <div class="logo">
-      <div class="logo-icon">🛡</div>
-      <div class="logo-text">
-        <div class="logo-name">CTI Platform</div>
-        <div class="logo-sub">by Claude AI</div>
-      </div>
-      <div class="live-pill"><span class="live-dot"></span>Live</div>
+
+<nav class="navbar">
+  <div class="navbar-brand">
+    <div class="brand-mark"></div>
+    <span class="brand-name">Radar</span>
+    <div class="live-indicator"><span class="live-dot"></span>Live</div>
+  </div>
+  <div class="navbar-links">
+    <a href="/" class="nav-link">Dashboard</a>
+    <a href="/threats.html" class="nav-link">Threats</a>
+    <a href="/sectors.html" class="nav-link">Sectors</a>
+    <a href="/iocs.html" class="nav-link active">IOCs</a>
+    <a href="/feeds.html" class="nav-link">Feeds</a>
+  </div>
+  <div class="navbar-actions">
+    <button class="btn-sync" onclick="exportIocs()" style="background:rgba(255,255,255,0.05);border-color:var(--border);color:var(--text-2)">Export CSV</button>
+    <button class="btn-sync" onclick="triggerPipeline()">Sync Now</button>
+  </div>
+</nav>
+
+<main class="page">
+  <div class="page-header">
+    <div class="page-title">IOC Explorer</div>
+    <span class="text-xs text-3" id="ioc-count"></span>
+  </div>
+
+  <div class="filters mb-4">
+    <select class="filter-select" id="f-ioc-type" onchange="loadIocs()">
+      <option value="">All Types</option>
+      <option value="ip">IP Address</option>
+      <option value="domain">Domain</option>
+      <option value="url">URL</option>
+      <option value="hash_md5">MD5</option>
+      <option value="hash_sha256">SHA256</option>
+      <option value="email">Email</option>
+      <option value="file_path">File Path</option>
+      <option value="registry_key">Registry Key</option>
+      <option value="mutex">Mutex</option>
+    </select>
+    <select class="filter-select" id="f-ioc-days" onchange="loadIocs()">
+      <option value="1">Last 24h</option>
+      <option value="7" selected>Last 7 days</option>
+      <option value="30">Last 30 days</option>
+    </select>
+    <select class="filter-select" id="f-ioc-confidence" onchange="loadIocs()">
+      <option value="50">Confidence 50%+</option>
+      <option value="70">Confidence 70%+</option>
+      <option value="85">Confidence 85%+</option>
+    </select>
+    <input type="text" class="filter-select" id="f-ioc-search" placeholder="Search IOC value…" oninput="loadIocs()" style="width:200px">
+  </div>
+
+  <div class="flex gap-2 mb-4" id="ioc-chips" style="flex-wrap:wrap"></div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Indicators of Compromise</div>
     </div>
-    <div class="nav">
-      <div class="nav-label">Intelligence</div>
-      <a class="nav-item" href="/"><span class="nav-icon">⚡</span>Dashboard</a>
-      <a class="nav-item" href="/threats.html"><span class="nav-icon">🛡</span>Threat Feed</a>
-      <a class="nav-item" href="/sectors.html"><span class="nav-icon">🏢</span>Sectors</a>
-      <a class="nav-item active" href="/iocs.html"><span class="nav-icon">🔍</span>IOC Explorer</a>
-      <div class="nav-label" style="margin-top:6px">System</div>
-      <a class="nav-item" href="/feeds.html"><span class="nav-icon">📡</span>Feed Health</a>
-    </div>
-    <div class="sidebar-footer">
-      <button class="btn btn-ghost btn-sm" onclick="triggerPipeline()" style="width:100%;margin-bottom:10px;justify-content:center">↻ Sync Now</button>
-      <div class="meta-row">
-        <span class="text-xs text-3">Schedule</span>
-        <span class="text-xs text-2">Every 3 hours</span>
-      </div>
-    </div>
-  </nav>
-  <div class="main">
-    <div class="topbar">
-      <div class="page-title">IOC Explorer</div>
-      <button class="btn btn-ghost" onclick="exportIocs()">↓ Export CSV</button>
-    </div>
-    <div class="content">
-      <div class="filters">
-        <select class="filter-select" id="f-ioc-type" onchange="loadIocs()">
-          <option value="">All Types</option>
-          <option value="ip">IP Address</option>
-          <option value="domain">Domain</option>
-          <option value="url">URL</option>
-          <option value="hash_md5">MD5</option>
-          <option value="hash_sha256">SHA256</option>
-          <option value="email">Email</option>
-          <option value="file_path">File Path</option>
-          <option value="registry_key">Registry Key</option>
-          <option value="mutex">Mutex</option>
-        </select>
-        <select class="filter-select" id="f-ioc-days" onchange="loadIocs()">
-          <option value="1">Last 24h</option>
-          <option value="7" selected>Last 7 days</option>
-          <option value="30">Last 30 days</option>
-        </select>
-        <select class="filter-select" id="f-ioc-confidence" onchange="loadIocs()">
-          <option value="50">Confidence ≥ 50%</option>
-          <option value="70">Confidence ≥ 70%</option>
-          <option value="85">Confidence ≥ 85%</option>
-        </select>
-        <input type="text" class="filter-select" id="f-ioc-search" placeholder="Search IOC value…" oninput="loadIocs()" style="width:200px">
-      </div>
-      <div class="flex gap-2 mb-4 flex-wrap" id="ioc-chips" style="flex-wrap:wrap"></div>
-      <div class="card">
-        <div class="card-head">
-          <div class="card-title">Indicators of Compromise</div>
-          <span class="text-xs text-3" id="ioc-count">0 IOCs</span>
-        </div>
-        <div id="iocs-list">
-          <div class="empty">
-            <div class="empty-icon">🔍</div>
-            <div class="empty-title">No IOCs yet</div>
-            <div class="empty-sub">Run a sync to start collecting indicators.</div>
-          </div>
-        </div>
+    <div id="iocs-list">
+      <div class="empty">
+        <div class="empty-title">No IOCs yet</div>
+        <div class="empty-sub">Run a sync to start collecting indicators.</div>
       </div>
     </div>
   </div>
-</div>
+</main>
+
 <div class="toast-wrap" id="toasts"></div>
 <script src="/js/common.js"></script>
 <script src="/js/iocs.js"></script>

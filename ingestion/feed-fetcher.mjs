@@ -51,7 +51,7 @@ export async function fetchRssFeed(feed) {
 
 export async function fetchNvdCves() {
   try {
-    const since = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().split('.')[0] + '.000';
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('.')[0] + '.000';
     const url = `https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=20&pubStartDate=${since}`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'ClaudeThreatIntelligence/1.0' },
