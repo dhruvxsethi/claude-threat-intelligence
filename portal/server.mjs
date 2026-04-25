@@ -3,7 +3,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync } from 'fs';
 import { getDb, migrate } from '../scripts/migrate.mjs';
-import { loadSettings } from '../ingestion/feed-fetcher.mjs';
+import { loadSettings, loadFeedsConfig } from '../ingestion/feed-fetcher.mjs';
 import cron from 'node-cron';
 import { spawn } from 'child_process';
 
@@ -276,7 +276,38 @@ app.get('/api/feeds', (req, res) => {
   const recentRuns = db.prepare(`
     SELECT * FROM feed_runs ORDER BY started_at DESC LIMIT 50
   `).all();
-  res.json({ health, recentRuns });
+
+  // Annotate health entries with enabled status from feeds config
+  let feedsById = {};
+  try {
+    const cfg = loadFeedsConfig();
+    (cfg.feeds || []).forEach(f => { feedsById[f.id] = f; });
+  } catch {}
+  const annotated = health.map(h => ({
+    ...h,
+    enabled: feedsById[h.feed_id] ? (feedsById[h.feed_id].enabled !== false) : true,
+    tier: feedsById[h.feed_id]?.tier || null,
+  }));
+
+  // Include configured feeds that have never run yet
+  const seenIds = new Set(health.map(h => h.feed_id));
+  let feedsConfig = [];
+  try {
+    const cfg = loadFeedsConfig();
+    feedsConfig = (cfg.feeds || []).filter(f => !seenIds.has(f.id)).map(f => ({
+      feed_id: f.id,
+      feed_name: f.name,
+      enabled: f.enabled !== false,
+      tier: f.tier,
+      is_healthy: f.enabled !== false ? null : 0,
+      total_threats_contributed: 0,
+      consecutive_failures: 0,
+      last_success: null,
+      never_run: true,
+    }));
+  } catch {}
+
+  res.json({ health: [...annotated, ...feedsConfig], recentRuns });
 });
 
 // ─── Trigger pipeline run manually ────────────────────────────────────────
@@ -357,6 +388,101 @@ app.get('/api/sectors/:sector', (req, res) => {
   });
 });
 
+// ─── Threat Actors API ────────────────────────────────────────────────────
+
+app.get('/api/actors', (req, res) => {
+  const db = ensureDb();
+  const { days = 30, search } = req.query;
+  const cutoff = new Date(Date.now() - parseInt(days) * 86400000).toISOString();
+
+  let where = 't.ingested_at >= ? AND ta.name != \'\' AND ta.name IS NOT NULL';
+  const params = [cutoff];
+  if (search) {
+    where += ' AND (ta.name LIKE ? OR ta.origin_country LIKE ? OR ta.motivation LIKE ?)';
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+  }
+
+  // Grouped actor list with aggregated stats
+  const actors = db.prepare(`
+    SELECT
+      ta.name,
+      ta.origin_country,
+      ta.motivation,
+      ta.sophistication,
+      ta.active_since,
+      ta.description,
+      GROUP_CONCAT(DISTINCT ta.aliases) as aliases_raw,
+      COUNT(DISTINCT ta.threat_id) as threat_count,
+      MAX(t.ingested_at) as last_seen,
+      MIN(t.ingested_at) as first_seen,
+      GROUP_CONCAT(DISTINCT t.severity) as severities,
+      GROUP_CONCAT(DISTINCT t.sectors) as sectors_raw,
+      GROUP_CONCAT(DISTINCT ta.threat_id) as threat_ids_raw
+    FROM threat_actors ta
+    JOIN threats t ON ta.threat_id = t.id
+    WHERE ${where}
+    GROUP BY ta.name
+    ORDER BY threat_count DESC, last_seen DESC
+    LIMIT 100
+  `).all(...params);
+
+  // Motivation / sophistication breakdowns (exclude blank-named actors)
+  const by_motivation = db.prepare(`
+    SELECT ta.motivation, COUNT(DISTINCT ta.name) as cnt
+    FROM threat_actors ta JOIN threats t ON ta.threat_id = t.id
+    WHERE t.ingested_at >= ? AND ta.name != '' AND ta.name IS NOT NULL
+    GROUP BY ta.motivation ORDER BY cnt DESC
+  `).all(cutoff);
+
+  const by_sophistication = db.prepare(`
+    SELECT ta.sophistication, COUNT(DISTINCT ta.name) as cnt
+    FROM threat_actors ta JOIN threats t ON ta.threat_id = t.id
+    WHERE t.ingested_at >= ? AND ta.name != '' AND ta.name IS NOT NULL
+    GROUP BY ta.sophistication ORDER BY cnt DESC
+  `).all(cutoff);
+
+  const by_country = db.prepare(`
+    SELECT ta.origin_country, COUNT(DISTINCT ta.name) as cnt
+    FROM threat_actors ta JOIN threats t ON ta.threat_id = t.id
+    WHERE t.ingested_at >= ? AND ta.name != '' AND ta.name IS NOT NULL
+      AND ta.origin_country IS NOT NULL AND ta.origin_country != ''
+    GROUP BY ta.origin_country ORDER BY cnt DESC LIMIT 15
+  `).all(cutoff);
+
+  // Get recent threats per actor (for detail panel)
+  const actorThreats = {};
+  for (const actor of actors.slice(0, 20)) {
+    const threats = db.prepare(`
+      SELECT t.id, t.title, t.severity, t.ingested_at, t.source_name, t.credibility_score
+      FROM threat_actors ta JOIN threats t ON ta.threat_id = t.id
+      WHERE ta.name = ? AND t.ingested_at >= ?
+      ORDER BY t.ingested_at DESC LIMIT 5
+    `).all(actor.name, cutoff);
+    actorThreats[actor.name] = threats;
+  }
+
+  res.json({
+    actors: actors.map(a => ({
+      ...a,
+      aliases: [...new Set((a.aliases_raw || '').split(',').flatMap(s => {
+        try { return JSON.parse(s); } catch { return []; }
+      }).filter(Boolean))],
+      severities: [...new Set((a.severities || '').split(',').filter(Boolean))],
+      sectors: [...new Set((a.sectors_raw || '').split(',').flatMap(s => {
+        try { return JSON.parse(s); } catch { return []; }
+      }).filter(Boolean))],
+      threat_ids: (a.threat_ids_raw || '').split(',').filter(Boolean),
+      recent_threats: actorThreats[a.name] || [],
+    })),
+    summary: {
+      total_actors: actors.length,
+      by_motivation,
+      by_sophistication,
+      by_country,
+    },
+  });
+});
+
 // ─── Search API ────────────────────────────────────────────────────────────
 
 app.get('/api/search', (req, res) => {
@@ -414,8 +540,8 @@ function parseThreat(t) {
 // ─── Built-in cron (runs alongside portal) ────────────────────────────────
 
 function schedulePipeline() {
-  // Full scan every hour — all feeds + vulnerability APIs
-  cron.schedule('0 * * * *', () => {
+  // Full scan every 3 hours — all feeds + vulnerability APIs
+  cron.schedule('0 */3 * * *', () => {
     if (_pipelineRunning) {
       console.log('[CRON] Pipeline already running, skipping scheduled run');
       return;
@@ -441,7 +567,7 @@ function schedulePipeline() {
     });
   }, { timezone: 'UTC' });
 
-  console.log('✓ Pipeline scheduled: every hour');
+  console.log('✓ Pipeline scheduled: every 3 hours');
 }
 
 // ─── Start ────────────────────────────────────────────────────────────────
@@ -450,8 +576,8 @@ ensureDb();
 schedulePipeline();
 
 app.listen(PORT, () => {
-  console.log(`\n  Sentinel Threat Intelligence`);
-  console.log(`  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`\n  Radar — Threat Intelligence`);
+  console.log(`  ━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   console.log(`  Portal:  http://localhost:${PORT}`);
   const backend = process.env.OLLAMA_MODEL
     ? `Ollama (${process.env.OLLAMA_MODEL})`
@@ -459,5 +585,5 @@ app.listen(PORT, () => {
       ? 'Anthropic Claude'
       : 'NONE — add OLLAMA_MODEL or ANTHROPIC_API_KEY to .env';
   console.log(`  Backend: ${backend}`);
-  console.log(`  Sync:    every hour (next run at top of hour UTC)\n`);
+  console.log(`  Sync:    every 3 hours (0:00, 3:00, 6:00 … UTC)\n`);
 });

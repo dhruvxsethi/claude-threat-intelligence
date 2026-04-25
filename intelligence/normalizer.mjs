@@ -152,9 +152,9 @@ function normalizeTtps(ttps, threatId) {
 }
 
 function normalizeActors(actors, threatId) {
-  return (actors || []).map(a => ({
+  return (actors || []).filter(a => a.name && a.name.trim()).map(a => ({
     threat_id: threatId,
-    name: a.name,
+    name: a.name.trim(),
     aliases: JSON.stringify(a.aliases || []),
     origin_country: a.origin_country || null,
     motivation: a.motivation || 'unknown',

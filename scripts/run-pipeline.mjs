@@ -130,6 +130,17 @@ async function saveThreat(db, threat) {
   return saveAll();
 }
 
+const _incrementFeedContrib = (() => {
+  let stmt;
+  return (db, feedId) => {
+    if (!stmt) stmt = db.prepare(`
+      UPDATE feed_health SET total_threats_contributed = total_threats_contributed + 1
+      WHERE feed_id = ?
+    `);
+    stmt.run(feedId);
+  };
+})();
+
 async function processArticles(db, items, dedup, correlator, settings) {
   const maxAnalyze = settings.claude.max_articles_per_run;
   const newItems = dedup.filterNewItems(items);
@@ -216,6 +227,7 @@ async function processArticles(db, items, dedup, correlator, settings) {
         dedup.markAnalyzed(item.url, threat.id);
         correlator.correlate(threat.id);
         correlator.updateIocIndex(threat._iocs || [], threat.id);
+        if (item.feed_id) _incrementFeedContrib(db, item.feed_id);
         threats++;
         ok(`[${(threat.severity || 'unknown').toUpperCase()}] ${threat.title.slice(0, 80)}`);
       }
@@ -254,6 +266,7 @@ async function processVulnerabilityApis(db, correlator) {
       const saved = await saveThreat(db, threat);
       if (saved) {
         correlator.correlate(threat.id);
+        _incrementFeedContrib(db, 'nvd_cve_api');
         threatsCreated++;
         ok(`NVD: ${cve.cve_id} (CVSS ${cve.cvss_score || 'N/A'})`);
       }
@@ -293,6 +306,7 @@ async function processVulnerabilityApis(db, correlator) {
       const saved = await saveThreat(db, threat);
       if (saved) {
         correlator.correlate(threat.id);
+        _incrementFeedContrib(db, 'cisa_kev_api');
         threatsCreated++;
         ok(`KEV: ${vuln.cveID} — ${vuln.vulnerabilityName}`);
       }

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radar — Threat Actors</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    /* ── Actor-page-specific styles ── */
+    .actor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+      gap: 12px;
+    }
+
+    .actor-tile {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 18px 20px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, transform 0.1s;
+      position: relative;
+      overflow: hidden;
+    }
+    .actor-tile:hover {
+      border-color: var(--border-2);
+      background: rgba(255,255,255,0.055);
+      transform: translateY(-1px);
+    }
+    .actor-tile.selected {
+      border-color: var(--blue);
+      background: rgba(79,142,247,0.06);
+    }
+    .actor-tile::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      border-radius: var(--r-lg) var(--r-lg) 0 0;
+    }
+    .actor-tile.soph-nation_state::before  { background: linear-gradient(90deg, #f55252, #e8a44a); }
+    .actor-tile.soph-advanced::before      { background: linear-gradient(90deg, #e8a44a, #d4a017); }
+    .actor-tile.soph-intermediate::before  { background: linear-gradient(90deg, #4f8ef7, #7c5cf6); }
+    .actor-tile.soph-basic::before         { background: linear-gradient(90deg, #4ac97e, #4f8ef7); }
+    .actor-tile.soph-unknown::before       { background: var(--border-2); }
+
+    .actor-tile-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .actor-tile-name {
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--text);
+      line-height: 1.3;
+    }
+    .actor-tile-count {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--blue);
+      white-space: nowrap;
+      letter-spacing: -0.02em;
+    }
+    .actor-count-label {
+      font-size: 0.55rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-3);
+      text-align: right;
+      line-height: 1.2;
+    }
+
+    .actor-tile-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+
+    .actor-tag {
+      font-size: 0.57rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .actor-tag.country  { background: rgba(79,142,247,0.12); color: var(--blue); border: 1px solid rgba(79,142,247,0.25); }
+    .actor-tag.motiv-financial   { background: rgba(74,201,126,0.12); color: var(--low); border: 1px solid rgba(74,201,126,0.25); }
+    .actor-tag.motiv-espionage   { background: rgba(167,139,250,0.12); color: var(--govt); border: 1px solid rgba(167,139,250,0.25); }
+    .actor-tag.motiv-sabotage    { background: rgba(245,82,82,0.12); color: var(--critical); border: 1px solid rgba(245,82,82,0.25); }
+    .actor-tag.motiv-hacktivism  { background: rgba(232,164,74,0.12); color: var(--high); border: 1px solid rgba(232,164,74,0.25); }
+    .actor-tag.motiv-cyberwarfare{ background: rgba(245,82,82,0.15); color: var(--critical); border: 1px solid rgba(245,82,82,0.35); }
+    .actor-tag.motiv-unknown     { background: rgba(74,85,104,0.15); color: var(--text-3); border: 1px solid var(--border); }
+    .actor-tag.soph { background: rgba(255,255,255,0.04); color: var(--text-3); border: 1px solid var(--border); }
+
+    .actor-tile-aliases {
+      font-size: 0.62rem;
+      color: var(--text-3);
+      margin-bottom: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .actor-tile-sectors {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .actor-tile-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .actor-last-seen {
+      font-size: 0.6rem;
+      color: var(--text-3);
+    }
+    .actor-sev-row {
+      display: flex;
+      gap: 3px;
+    }
+
+    /* Detail panel */
+    .actor-detail-panel {
+      position: sticky;
+      top: calc(var(--navbar-h) + 16px);
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      max-height: calc(100vh - var(--navbar-h) - 48px);
+      overflow-y: auto;
+    }
+    .actor-detail-panel::-webkit-scrollbar { width: 3px; }
+
+    .adp-header {
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+    }
+    .adp-name {
+      font-size: 0.92rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+    }
+    .adp-section {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .adp-section:last-child { border-bottom: none; }
+    .adp-section-title {
+      font-size: 0.58rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-3);
+      margin-bottom: 10px;
+    }
+    .adp-desc {
+      font-size: 0.7rem;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+    .adp-threat-item {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .adp-threat-item:last-child { border-bottom: none; }
+    .adp-threat-title {
+      font-size: 0.68rem;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1.4;
+      flex: 1;
+    }
+    .adp-threat-meta {
+      font-size: 0.6rem;
+      color: var(--text-3);
+      margin-top: 2px;
+    }
+    .adp-meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      gap: 8px;
+    }
+    .adp-meta-row:last-child { border-bottom: none; }
+    .adp-meta-key  { font-size: 0.62rem; color: var(--text-3); }
+    .adp-meta-val  { font-size: 0.68rem; color: var(--text); font-weight: 500; text-align: right; }
+
+    .adp-empty {
+      padding: 24px 20px;
+      text-align: center;
+      font-size: 0.72rem;
+      color: var(--text-3);
+    }
+
+    /* Summary bar */
+    .actor-summary-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .asb-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 14px 16px;
+      text-align: center;
+    }
+    .asb-val  { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.03em; color: var(--text); }
+    .asb-label{ font-size: 0.6rem; color: var(--text-3); margin-top: 3px; }
+
+    /* Country bar chart */
+    .country-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 0;
+    }
+    .country-bar-name { font-size: 0.68rem; color: var(--text-2); min-width: 90px; }
+    .country-bar-track { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .country-bar-fill  { height: 100%; border-radius: 2px; background: var(--blue); }
+    .country-bar-cnt   { font-size: 0.62rem; color: var(--text-3); min-width: 20px; text-align: right; }
+
+    /* Motivation donut labels */
+    .motiv-list { display: flex; flex-direction: column; gap: 7px; }
+    .motiv-row  { display: flex; align-items: center; gap: 8px; }
+    .motiv-dot  { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .motiv-name { font-size: 0.68rem; color: var(--text-2); flex: 1; text-transform: capitalize; }
+    .motiv-cnt  { font-size: 0.68rem; font-weight: 600; color: var(--text); }
+
+    /* Main layout */
+    .actors-layout {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    @media (max-width: 960px) {
+      .actors-layout { grid-template-columns: 1fr; }
+      .actor-summary-bar { grid-template-columns: repeat(2, 1fr); }
+      .actor-detail-panel { position: static; max-height: none; }
+    }
+  </style>
+</head>
+<body>
+
+<nav class="navbar">
+  <div class="navbar-brand">
+    <div class="brand-mark"></div>
+    <span class="brand-name">Radar</span>
+    <div class="live-indicator"><span class="live-dot"></span>Live</div>
+  </div>
+  <div class="navbar-links">
+    <a href="/" class="nav-link">Dashboard</a>
+    <a href="/threats.html" class="nav-link">Threats</a>
+    <a href="/sectors.html" class="nav-link">Sectors</a>
+    <a href="/iocs.html" class="nav-link">IOCs</a>
+    <a href="/actors.html" class="nav-link active">Actors</a>
+    <a href="/feeds.html" class="nav-link">Feeds</a>
+  </div>
+  <div class="navbar-actions">
+    <div class="search-wrap">
+      <span class="search-icon">⌕</span>
+      <input type="text" id="actor-search" placeholder="Search actors, countries…" oninput="searchActors(this.value)">
+    </div>
+    <button class="btn-sync" onclick="triggerPipeline()">Sync Now</button>
+  </div>
+</nav>
+
+<main class="page">
+  <div class="page-header">
+    <div class="page-title">Threat Actors</div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="time-pills">
+        <button class="time-pill" onclick="setDays(7,this)">7d</button>
+        <button class="time-pill active" onclick="setDays(30,this)">30d</button>
+        <button class="time-pill" onclick="setDays(90,this)">90d</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary bar -->
+  <div class="actor-summary-bar" id="summary-bar">
+    <div class="asb-card"><div class="asb-val" id="asb-total">—</div><div class="asb-label">Unique Actors</div></div>
+    <div class="asb-card"><div class="asb-val" id="asb-nations">—</div><div class="asb-label">Nation-State</div></div>
+    <div class="asb-card"><div class="asb-val" id="asb-countries">—</div><div class="asb-label">Origin Countries</div></div>
+    <div class="asb-card"><div class="asb-val" id="asb-threats">—</div><div class="asb-label">Total Threat Reports</div></div>
+  </div>
+
+  <div class="actors-layout">
+    <!-- Left: filter controls + grid -->
+    <div>
+      <!-- Motivation filter + sort -->
+      <div class="filter-panel mb-4">
+        <div class="filter-panel-row">
+          <div class="fp-group">
+            <span class="fp-label">Motivation</span>
+            <div class="filter-group">
+              <button class="filter-pill active" onclick="setMotiv(this,'')">All</button>
+              <button class="filter-pill" onclick="setMotiv(this,'espionage')">Espionage</button>
+              <button class="filter-pill" onclick="setMotiv(this,'financial')">Financial</button>
+              <button class="filter-pill" onclick="setMotiv(this,'sabotage')">Sabotage</button>
+              <button class="filter-pill" onclick="setMotiv(this,'hacktivism')">Hacktivism</button>
+              <button class="filter-pill" onclick="setMotiv(this,'cyberwarfare')">Warfare</button>
+            </div>
+          </div>
+          <div class="fp-group">
+            <span class="fp-label">Sophistication</span>
+            <div class="filter-group">
+              <button class="filter-pill active" onclick="setSoph(this,'')">All</button>
+              <button class="filter-pill" onclick="setSoph(this,'nation_state')">Nation-State</button>
+              <button class="filter-pill" onclick="setSoph(this,'advanced')">Advanced</button>
+              <button class="filter-pill" onclick="setSoph(this,'intermediate')">Intermediate</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actor cards grid -->
+      <div id="actor-grid">
+        <div class="empty"><div class="empty-icon">⬡</div><div class="empty-title">Loading actors…</div></div>
+      </div>
+    </div>
+
+    <!-- Right: detail panel + intel breakdown -->
+    <div>
+      <!-- Actor detail (shown when one is selected) -->
+      <div class="actor-detail-panel mb-4" id="actor-detail">
+        <div class="adp-empty">Click an actor card to see full intelligence profile</div>
+      </div>
+
+      <!-- Country breakdown -->
+      <div class="card mb-4">
+        <div class="card-head"><div class="card-title">Origin Countries</div></div>
+        <div style="padding:14px 16px" id="country-chart">
+          <div class="text-xs text-3">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Motivation breakdown -->
+      <div class="card">
+        <div class="card-head"><div class="card-title">Motivation Breakdown</div></div>
+        <div style="padding:14px 16px" id="motiv-chart">
+          <div class="text-xs text-3">Loading…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="toast-wrap" id="toasts"></div>
+<script src="/js/common.js"></script>
+<script src="/js/actors.js"></script>
+</body>
+</html>

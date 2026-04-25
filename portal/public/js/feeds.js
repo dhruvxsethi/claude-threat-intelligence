@@ -5,11 +5,12 @@ async function loadFeeds() {
   const feeds  = d.health || [];
   const runs   = d.recentRuns || [];
 
-  const healthy = feeds.filter(f => f.is_healthy).length;
-  const failed  = feeds.filter(f => !f.is_healthy).length;
+  const active   = feeds.filter(f => f.enabled !== false);
+  const healthy  = active.filter(f => f.is_healthy).length;
+  const failed   = active.filter(f => f.is_healthy === 0 && !f.never_run).length;
   setText('feeds-healthy', healthy);
   setText('feeds-failed',  failed);
-  setText('feeds-total',   feeds.length);
+  setText('feeds-total',   active.length);
   const today = new Date().toDateString();
   setText('runs-today', runs.filter(r => new Date(r.started_at).toDateString() === today).length);
 
@@ -17,16 +18,36 @@ async function loadFeeds() {
   renderRuns(runs);
 }
 
-// Group feeds by type (API vs RSS tier)
+// Group feeds by tier/type
 function feedGroup(f) {
+  if (f.enabled === false) return 'Disabled';
   const name = (f.feed_name || f.feed_id || '').toLowerCase();
-  if (name.includes('nvd') || name.includes('cisa') || name.includes('github advisory')) return 'Vulnerability APIs';
-  if ((f.tier || '') === '1' || name.includes('mandiant') || name.includes('crowdstrike') || name.includes('recorded future') || name.includes('unit 42') || name.includes('talos') || name.includes('microsoft') || name.includes('google')) return 'Tier 1 — Vendor Research';
-  if ((f.tier || '') === '2') return 'Tier 2 — Security News';
+  const tier = f.tier;
+  if (name.includes('nvd') || name.includes('cisa') || name.includes('github advisor')) return 'Vulnerability APIs';
+  if (tier === 1 || tier === '1') return 'Tier 1 — Official & Major Vendors';
+  if (tier === 2 || tier === '2') return 'Tier 2 — Major Vendors';
+  if (tier === 3 || tier === '3') return 'Tier 3 — Security News';
+  if (tier === 4 || tier === '4') return 'Tier 4 — Sector-Specific';
+  if (tier === 5 || tier === '5') return 'Tier 5 — Community';
   return 'Other';
 }
 
-const GROUP_ORDER = ['Vulnerability APIs', 'Tier 1 — Vendor Research', 'Tier 2 — Security News', 'Other'];
+const GROUP_ORDER = [
+  'Vulnerability APIs',
+  'Tier 1 — Official & Major Vendors',
+  'Tier 2 — Major Vendors',
+  'Tier 3 — Security News',
+  'Tier 4 — Sector-Specific',
+  'Tier 5 — Community',
+  'Other',
+  'Disabled',
+];
+
+function feedDotClass(f) {
+  if (f.enabled === false) return 'disabled';
+  if (f.never_run) return 'never';
+  return f.is_healthy ? 'ok' : 'err';
+}
 
 function renderHealth(feeds) {
   const el = document.getElementById('feed-health-list');
@@ -35,7 +56,6 @@ function renderHealth(feeds) {
     return;
   }
 
-  // Group
   const groups = {};
   for (const f of feeds) {
     const g = feedGroup(f);
@@ -47,16 +67,26 @@ function renderHealth(feeds) {
   for (const gName of GROUP_ORDER) {
     const items = groups[gName];
     if (!items?.length) continue;
-    html += `<div class="feed-group-label">${gName}</div>`;
+    const isDisabled = gName === 'Disabled';
+    html += `<div class="feed-group-label">${gName}${isDisabled ? ' — excluded from pipeline' : ''}</div>`;
     html += items.map(f => {
-      const ok = f.is_healthy;
+      const dotCls = feedDotClass(f);
       const fails = f.consecutive_failures || 0;
-      return `<div class="feed-item">
-        <div class="feed-dot ${ok ? 'ok' : 'err'}"></div>
-        <span class="feed-name">${esc(f.feed_name || f.feed_id)}</span>
+      const statusBadge = f.enabled === false
+        ? `<span class="badge badge-unknown" style="font-size:.6rem">disabled</span>`
+        : f.never_run
+          ? `<span class="text-xs text-3">never run</span>`
+          : (!f.is_healthy && fails > 0)
+            ? `<span class="badge badge-critical" style="font-size:.6rem">${fails} fail${fails !== 1 ? 's' : ''}</span>`
+            : '';
+      return `<div class="feed-item" style="${f.enabled === false ? 'opacity:.45' : ''}">
+        <div class="feed-dot ${dotCls}"></div>
+        <div class="feed-info">
+          <div class="feed-name">${esc(f.feed_name || f.feed_id)}</div>
+        </div>
         <span class="feed-count">${f.total_threats_contributed || 0} threats</span>
-        <span class="text-xs text-3">${f.last_success ? relTime(f.last_success) : 'never'}</span>
-        ${!ok && fails > 0 ? `<span class="badge badge-critical" style="font-size:.65rem">${fails} fail${fails !== 1 ? 's' : ''}</span>` : ''}
+        <span class="feed-time">${f.last_success ? relTime(f.last_success) : '—'}</span>
+        ${statusBadge}
       </div>`;
     }).join('');
   }

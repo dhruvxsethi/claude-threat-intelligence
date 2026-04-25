@@ -18,6 +18,7 @@
     <a href="/threats.html" class="nav-link active">Threats</a>
     <a href="/sectors.html" class="nav-link">Sectors</a>
     <a href="/iocs.html" class="nav-link">IOCs</a>
+    <a href="/actors.html" class="nav-link">Actors</a>
     <a href="/feeds.html" class="nav-link">Feeds</a>
   </div>
   <div class="navbar-actions">
@@ -35,39 +36,74 @@
     <span class="text-xs text-3" id="results-count"></span>
   </div>
 
-  <div class="filters mb-4">
-    <select class="filter-select" id="f-severity" onchange="applyFilters()">
-      <option value="">All Severities</option>
-      <option value="critical">Critical</option>
-      <option value="high">High</option>
-      <option value="medium">Medium</option>
-      <option value="low">Low</option>
-    </select>
-    <select class="filter-select" id="f-sector" onchange="applyFilters()">
-      <option value="">All Sectors</option>
-      <option value="banking">Banking</option>
-      <option value="government">Government</option>
-      <option value="healthcare">Healthcare</option>
-    </select>
-    <select class="filter-select" id="f-type" onchange="applyFilters()">
-      <option value="">All Types</option>
-      <option value="ransomware">Ransomware</option>
-      <option value="apt">APT</option>
-      <option value="phishing">Phishing</option>
-      <option value="vulnerability">Vulnerability</option>
-      <option value="data_breach">Data Breach</option>
-      <option value="supply_chain">Supply Chain</option>
-      <option value="zero_day">Zero Day</option>
-      <option value="ddos">DDoS</option>
-    </select>
-    <select class="filter-select" id="f-days" onchange="applyFilters()">
-      <option value="1">Last 24h</option>
-      <option value="7" selected>Last 7 days</option>
-      <option value="14">Last 14 days</option>
-      <option value="30">Last 30 days</option>
-    </select>
-    <label class="filter-check"><input type="checkbox" id="f-has-cves" onchange="applyFilters()"> Has CVEs</label>
-    <label class="filter-check"><input type="checkbox" id="f-has-iocs" onchange="applyFilters()"> Has IOCs</label>
+  <div class="filter-panel mb-4">
+    <div class="filter-panel-row">
+      <!-- Severity pills -->
+      <div class="fp-group">
+        <span class="fp-label">Severity</span>
+        <div class="filter-group">
+          <button class="filter-pill active" data-filter="severity" data-val="" onclick="setFilterPill(this,'severity','')">All</button>
+          <button class="filter-pill critical" data-filter="severity" data-val="critical" onclick="setFilterPill(this,'severity','critical')">Critical</button>
+          <button class="filter-pill high"     data-filter="severity" data-val="high"     onclick="setFilterPill(this,'severity','high')">High</button>
+          <button class="filter-pill medium"   data-filter="severity" data-val="medium"   onclick="setFilterPill(this,'severity','medium')">Medium</button>
+          <button class="filter-pill low"      data-filter="severity" data-val="low"      onclick="setFilterPill(this,'severity','low')">Low</button>
+        </div>
+      </div>
+
+      <!-- Sector pills -->
+      <div class="fp-group">
+        <span class="fp-label">Sector</span>
+        <div class="filter-group">
+          <button class="filter-pill active" data-filter="sector" data-val="" onclick="setFilterPill(this,'sector','')">All</button>
+          <button class="filter-pill banking"    data-filter="sector" data-val="banking"    onclick="setFilterPill(this,'sector','banking')">Banking</button>
+          <button class="filter-pill government" data-filter="sector" data-val="government" onclick="setFilterPill(this,'sector','government')">Gov</button>
+          <button class="filter-pill healthcare" data-filter="sector" data-val="healthcare" onclick="setFilterPill(this,'sector','healthcare')">Health</button>
+        </div>
+      </div>
+
+      <!-- Time range -->
+      <div class="fp-group">
+        <span class="fp-label">Period</span>
+        <div class="time-pills">
+          <button class="time-pill" data-days="1"  onclick="setDaysPill(this,1)">24h</button>
+          <button class="time-pill active" data-days="7" onclick="setDaysPill(this,7)">7d</button>
+          <button class="time-pill" data-days="14" onclick="setDaysPill(this,14)">14d</button>
+          <button class="time-pill" data-days="30" onclick="setDaysPill(this,30)">30d</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="filter-panel-row filter-panel-row--secondary">
+      <!-- Type dropdown -->
+      <div class="fp-group">
+        <span class="fp-label">Type</span>
+        <select class="filter-select" id="f-type" onchange="applyFilters()">
+          <option value="">All Types</option>
+          <option value="ransomware">Ransomware</option>
+          <option value="apt">APT</option>
+          <option value="phishing">Phishing</option>
+          <option value="vulnerability">Vulnerability</option>
+          <option value="data_breach">Data Breach</option>
+          <option value="supply_chain">Supply Chain</option>
+          <option value="zero_day">Zero Day</option>
+          <option value="ddos">DDoS</option>
+        </select>
+      </div>
+
+      <!-- Toggle checks -->
+      <div class="fp-group">
+        <span class="fp-label">Must have</span>
+        <div style="display:flex;gap:6px">
+          <label class="filter-check"><input type="checkbox" id="f-has-cves" onchange="applyFilters()"> CVEs</label>
+          <label class="filter-check"><input type="checkbox" id="f-has-iocs" onchange="applyFilters()"> IOCs</label>
+        </div>
+      </div>
+
+      <!-- Hidden legacy selects used by JS -->
+      <select id="f-severity" style="display:none"><option value=""></option></select>
+      <select id="f-sector"   style="display:none"><option value=""></option></select>
+      <select id="f-days"     style="display:none"><option value="7" selected></option></select>
+    </div>
   </div>
 
   <div class="card">

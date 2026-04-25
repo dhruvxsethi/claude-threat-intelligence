@@ -87,18 +87,23 @@ async function load() {
           </div>
         </div>
 
-        ${(t.related?.length) ? `<div class="card">
-          <div class="card-head"><div class="card-title">Related (${t.related.length})</div></div>
-          <div style="padding:8px">
-            ${t.related.map(r => `<a href="/threat-detail.html?id=${r.id}" class="d-related-item">
-              <div class="d-related-sev">${sevBadge(r.severity)}</div>
-              <div class="d-related-title">${esc(r.title?.slice(0, 55))}</div>
-              <div class="text-xs text-3">${relTime(r.ingested_at)}</div>
-            </a>`).join('')}
-          </div>
-        </div>` : ''}
       </div>
-    </div>`;
+    </div>
+
+    ${(t.related?.length) ? `
+    <div class="d-related-section">
+      <div class="d-related-header">
+        <span class="d-related-label">Related Threats</span>
+        <span class="d-related-count">${t.related.length}</span>
+      </div>
+      <div class="related-hscroll">
+        ${t.related.map(r => `<a href="/threat-detail.html?id=${r.id}" class="related-hcard">
+          <div class="mb-2">${sevBadge(r.severity)}</div>
+          <div class="related-hcard-title">${esc(r.title?.slice(0, 80))}</div>
+          <div class="text-xs text-3" style="margin-top:auto;padding-top:8px">${relTime(r.ingested_at)}</div>
+        </a>`).join('')}
+      </div>
+    </div>` : ''}`;
 
   renderTab('overview');
 }
@@ -204,18 +209,33 @@ function renderTab(name) {
     el.innerHTML = `<div class="d-block"><div class="d-block-title">MITRE ATT&CK Techniques</div>${rows}</div>`;
 
   } else if (name === 'actors') {
-    const rows = t.actors?.length
-      ? t.actors.map(a => `<div class="actor-card">
-          <div class="actor-name">${esc(a.name)}</div>
-          <div class="actor-meta">${[
-            a.origin_country,
-            a.motivation !== 'unknown' ? a.motivation : null,
-            a.sophistication !== 'unknown' ? a.sophistication : null,
-          ].filter(Boolean).join(' · ') || '—'}</div>
-          ${a.aliases?.length ? `<div class="text-xs text-3 mt-2">Also known as: ${a.aliases.join(', ')}</div>` : ''}
-          ${a.description ? `<div class="text-xs text-2 mt-2">${esc(a.description)}</div>` : ''}
-        </div>`).join('')
-      : '<div class="d-empty">No actors identified</div>';
+    const MOTIV_COLOR = {
+      financial:'#4ac97e', espionage:'#a78bfa', sabotage:'#f55252',
+      hacktivism:'#e8a44a', cyberwarfare:'#f55252', unknown:'#4a5568',
+    };
+    const SOPH_LABEL = {
+      nation_state:'Nation-State', advanced:'Advanced', intermediate:'Intermediate',
+      basic:'Basic', script_kiddie:'Script Kiddie', unknown:'Unknown',
+    };
+    const rows = t.actors?.filter(a => a.name?.trim()).length
+      ? t.actors.filter(a => a.name?.trim()).map(a => {
+          const motivColor = MOTIV_COLOR[a.motivation] || '#4a5568';
+          const sophLabel  = SOPH_LABEL[a.sophistication] || a.sophistication || 'Unknown';
+          return `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:10px">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
+              <div style="font-size:.82rem;font-weight:700;color:var(--text)">${esc(a.name)}</div>
+              <span style="font-size:.58rem;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em;background:${motivColor}22;color:${motivColor};border:1px solid ${motivColor}44;white-space:nowrap">${esc(a.motivation||'unknown')}</span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:${a.description||a.aliases?.length?'10px':'0'}">
+              ${a.origin_country ? `<span style="font-size:.6rem;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;background:rgba(79,142,247,.12);color:var(--blue);border:1px solid rgba(79,142,247,.25)">${esc(a.origin_country)}</span>` : ''}
+              <span style="font-size:.6rem;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;background:rgba(255,255,255,.04);color:var(--text-3);border:1px solid var(--border)">${esc(sophLabel)}</span>
+            </div>
+            ${a.aliases?.length ? `<div class="text-xs text-3" style="margin-bottom:6px">aka: ${a.aliases.join(', ')}</div>` : ''}
+            ${a.description ? `<div class="text-xs text-2" style="line-height:1.55">${esc(a.description)}</div>` : ''}
+            <div style="margin-top:8px"><a href="/actors.html" class="text-xs" style="color:var(--blue)">View actor profile →</a></div>
+          </div>`;
+        }).join('')
+      : '<div class="d-empty">No named actors identified in this report</div>';
 
     el.innerHTML = `<div class="d-block"><div class="d-block-title">Threat Actors</div>${rows}</div>`;
   }

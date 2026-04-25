@@ -1,5 +1,24 @@
 let _page=1, _sort='ingested_at', _order='desc', _q='';
 
+// Sync pill selection → hidden select → reload
+function setFilterPill(btn, filter, val) {
+  // Deactivate siblings in same group
+  btn.closest('.filter-group').querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  // Sync hidden select
+  const sel = document.getElementById('f-' + filter);
+  if (sel) { sel.innerHTML = `<option value="${val}" selected></option>`; }
+  loadThreats(1);
+}
+
+function setDaysPill(btn, days) {
+  btn.closest('.time-pills').querySelectorAll('.time-pill').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const sel = document.getElementById('f-days');
+  if (sel) { sel.innerHTML = `<option value="${days}" selected></option>`; }
+  loadThreats(1);
+}
+
 function getF() {
   return {
     severity: document.getElementById('f-severity')?.value||'',
