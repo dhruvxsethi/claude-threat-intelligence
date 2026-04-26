@@ -4,6 +4,7 @@ async function loadFeeds() {
   const d = await fetch('/api/feeds').then(r => r.json());
   const feeds  = d.health || [];
   const quality = d.feedQuality || [];
+  const recommendations = d.feedRecommendations || [];
   const runs   = d.recentRuns || [];
   const discovered = d.discoveredSources || [];
 
@@ -18,6 +19,7 @@ async function loadFeeds() {
 
   renderHealth(feeds);
   renderQuality(quality);
+  renderRecommendations(recommendations);
   renderDiscovered(discovered);
   renderRuns(runs);
 }
@@ -151,6 +153,24 @@ function renderQuality(feeds) {
       </tr>`;
     }).join('')}</tbody>
   </table></div>`;
+}
+
+function renderRecommendations(items) {
+  const el = document.getElementById('feed-recommendations');
+  if (!el) return;
+  if (!items.length) {
+    el.innerHTML = '<div class="text-sm text-3" style="padding:16px">No feed recommendations right now.</div>';
+    return;
+  }
+  el.innerHTML = items.map(f => `<div class="feed-item">
+    <div class="feed-dot ${f.quality_score >= 40 ? 'never' : 'err'}"></div>
+    <div class="feed-info">
+      <div class="feed-name">${esc(f.feed_name || f.feed_id)}</div>
+      <div class="feed-meta">${(f.reasons || []).map(esc).join(' · ')}</div>
+    </div>
+    <span class="feed-count">${f.quality_score || 0} quality</span>
+    <span class="feed-time">review</span>
+  </div>`).join('');
 }
 
 function qualityMeter(score) {

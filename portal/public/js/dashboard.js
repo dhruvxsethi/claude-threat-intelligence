@@ -74,6 +74,8 @@ async function loadUniqueFinds() {
   setText('u-unique', d.summary?.unique_candidates ?? 0);
   setText('u-ioc', d.summary?.ioc_rich_unique ?? 0);
   setText('u-actor', d.summary?.actor_campaign_unique ?? 0);
+  setText('u-checked', d.summary?.checked_unique ?? 0);
+  setText('u-high', d.summary?.high_confidence_unique ?? 0);
 
   const el = document.getElementById('unique-finds-list');
   if (!el) return;
@@ -97,13 +99,13 @@ async function loadUniqueFinds() {
     ].filter(Boolean).join('');
 
     return `<div class="unique-item">
-      <div>${sevBadge(t.severity)}</div>
+      <div class="unique-severity-cell">${sevBadge(t.severity)}</div>
       <div>
         <div class="unique-title"><a href="/threat-detail.html?id=${t.id}">${esc(t.title)}</a></div>
         <div class="unique-meta">${esc(t.source_name || 'Unknown source')} · ${relTime(t.ingested_at)} · ${esc(confidence)}</div>
         <div class="unique-coverage">${chips}</div>
       </div>
-      <a class="card-link" href="/threat-detail.html?id=${t.id}">Evidence</a>
+      <div class="unique-action-cell"><a class="card-link" href="/threat-detail.html?id=${t.id}">Evidence</a></div>
     </div>`;
   }).join('');
 }

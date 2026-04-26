@@ -25,6 +25,16 @@ function coverageForThreat(db, threat) {
   const cves = db.prepare('SELECT cve_id FROM threat_cves WHERE threat_id = ?').all(threat.id);
   const iocs = db.prepare('SELECT ioc_type, ioc_value FROM threat_iocs WHERE threat_id = ? LIMIT 30').all(threat.id);
   const sightings = db.prepare('SELECT provider FROM external_sightings WHERE threat_id = ?').all(threat.id);
+  const checks = db.prepare(`
+    SELECT observed_at, metadata
+    FROM threat_evidence
+    WHERE threat_id = ? AND evidence_type = 'gap_tracking'
+    ORDER BY observed_at DESC, id DESC
+    LIMIT 100
+  `).all(threat.id).map(r => {
+    const meta = parseJson(r.metadata, {});
+    return meta.provider ? { ...meta, checked_at: meta.checked_at || r.observed_at } : null;
+  }).filter(Boolean);
   const seenSources = new Set();
 
   for (const cve of cves) {
@@ -53,6 +63,11 @@ function coverageForThreat(db, threat) {
     seen_sources: [...seenSources],
     external_providers: external,
     match_material: { cves: cves.length, iocs: iocs.length },
+    checked_sources: checks,
+    confidence: {
+      level: cves.length + iocs.length ? 'medium' : 'low',
+      score: cves.length + iocs.length ? 70 : 35,
+    },
   };
 }
 
@@ -82,7 +97,10 @@ function buildReport(data, days) {
     lines.push(`- Source: ${t.source_name}`);
     lines.push(`- Source URL: ${t.source_url || 'n/a'}`);
     lines.push(`- First seen by Radar: ${t.first_seen_by_us_at || t.ingested_at}`);
+    lines.push(`- Coverage confidence: ${t.coverage.confidence.level} (${t.coverage.confidence.score})`);
+    lines.push(`- Checked sources: ${formatChecks(t.coverage.checked_sources)}`);
     lines.push(`- CVEs: ${t.cve_count}; IOCs: ${t.ioc_count}`);
+    lines.push(`- Timeline: published ${t.published_at || 'n/a'}; Radar ingested ${t.first_seen_by_us_at || t.ingested_at}; coverage checked ${latestCheck(t.coverage.checked_sources) || 'n/a'}`);
     lines.push(`- Why it matters: ${(t.summary || '').replace(/\s+/g, ' ').slice(0, 320) || 'Source article contained extractable threat intelligence.'}`);
     lines.push('');
   }
@@ -97,6 +115,15 @@ function buildReport(data, days) {
   lines.push('', '## Method', '');
   lines.push('Radar compares article-sourced threats against imported external sightings and local records from commodity/common sources using exact CVE and IOC matches. Not-seen-elsewhere means no match was found in the monitored set, not that no platform globally has the item.');
   return `${lines.join('\n')}\n`;
+}
+
+function latestCheck(checks = []) {
+  return checks.map(c => c.checked_at).filter(Boolean).sort().pop();
+}
+
+function formatChecks(checks = []) {
+  if (!checks.length) return 'none recorded';
+  return checks.map(c => `${c.provider}:${c.status || 'unknown'}`).join(', ');
 }
 
 const days = parseInt(argValue('days', '7'), 10);

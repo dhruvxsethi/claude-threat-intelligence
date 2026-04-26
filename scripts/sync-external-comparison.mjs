@@ -332,6 +332,46 @@ function insertExternalSighting(db, row, match) {
   return false;
 }
 
+function insertCheckEvidence(db, threatId, provider, matchType, matchValue, status, detail = {}) {
+  db.prepare(`
+    INSERT INTO threat_evidence (
+      threat_id, evidence_type, title, body, url, observed_at, metadata
+    ) VALUES (?, 'gap_tracking', ?, ?, ?, datetime('now'), ?)
+  `).run(
+    threatId,
+    `${provider} check: ${status}`,
+    status === 'not_found'
+      ? `${provider} was checked for ${matchType}: ${matchValue}; no matching record was found.`
+      : `${provider} was checked for ${matchType}: ${matchValue}.`,
+    detail.url || null,
+    JSON.stringify({
+      provider,
+      match_type: matchType,
+      match_value: matchValue,
+      status,
+      checked_at: isoNow(),
+      ...detail,
+    })
+  );
+}
+
+function markChecked(db, threatIds, provider, matchType, matchValue, found, detail = {}) {
+  const update = db.prepare(`
+    UPDATE threats
+    SET gap_checked_at = datetime('now'),
+        gap_status = CASE
+          WHEN ? = 1 THEN gap_status
+          WHEN gap_status IS NULL OR gap_status = 'not_checked' THEN 'not_seen_elsewhere'
+          ELSE gap_status
+        END
+    WHERE id = ?
+  `);
+  for (const threatId of threatIds) {
+    update.run(found ? 1 : 0, threatId);
+    insertCheckEvidence(db, threatId, provider, matchType, matchValue, found ? 'found' : 'not_found', detail);
+  }
+}
+
 loadEnv();
 
 const days = parseInt(argValue('days', '14'), 10);
@@ -396,8 +436,9 @@ for (const cve of cves) {
     checked++;
     try {
       const row = await fn();
-      if (!row) continue;
       const threats = cveThreats.all(cve);
+      markChecked(db, threats.map(t => t.threat_id), provider, 'cve', cve, !!row, row ? { url: row.url } : {});
+      if (!row) continue;
       for (const t of threats) {
         matched++;
         const didImport = insertExternalSighting(db, row, { threat_id: t.threat_id, match_type: 'cve', match_value: cve });
@@ -423,8 +464,9 @@ for (const ioc of iocs) {
     checked++;
     try {
       const row = await fn();
-      if (!row) continue;
       const threats = iocThreats.all(ioc.ioc_type, ioc.ioc_value);
+      markChecked(db, threats.map(t => t.threat_id), provider, 'ioc', `${ioc.ioc_type}:${ioc.ioc_value}`, !!row, row ? { url: row.url } : {});
+      if (!row) continue;
       for (const t of threats) {
         matched++;
         const didImport = insertExternalSighting(db, row, {

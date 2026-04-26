@@ -426,6 +426,8 @@ app.get('/api/unique-finds', (req, res) => {
       actor_campaign_unique: actorCampaignUnique.length,
       external_seen: enriched.filter(t => t.coverage.external_providers.length > 0).length,
       otx_seen: enriched.filter(t => t.coverage.external_providers.includes('otx')).length,
+      checked_unique: unique.filter(t => (t.coverage.checked_sources || []).some(s => s.status && s.status !== 'not_checked')).length,
+      high_confidence_unique: unique.filter(t => (t.coverage.confidence?.score || 0) >= 70).length,
     },
     latest_unique: unique.slice(0, parseInt(limit)).map(compactThreatForCoverage),
     ioc_rich_unique: iocRichUnique.slice(0, parseInt(limit)).map(compactThreatForCoverage),
@@ -606,8 +608,21 @@ app.get('/api/feeds', (req, res) => {
     .filter(f => f.enabled !== false)
     .sort((a, b) => (b.quality_score || 0) - (a.quality_score || 0) || (b.computed_threats || 0) - (a.computed_threats || 0))
     .slice(0, 12);
+  const feedRecommendations = fullHealth
+    .filter(f => f.enabled !== false)
+    .map(f => {
+      const reasons = [];
+      if (f.is_healthy === 0) reasons.push(`${f.consecutive_failures || 0} recent fetch failure${(f.consecutive_failures || 0) === 1 ? '' : 's'}`);
+      if ((f.articles_seen || 0) > 0 && (f.computed_threats || 0) === 0) reasons.push('no saved threats yet');
+      if ((f.duplicate_content || 0) > 10) reasons.push(`${f.duplicate_content} duplicate articles`);
+      if ((f.stale_articles || 0) > 10) reasons.push(`${f.stale_articles} stale articles`);
+      return reasons.length ? { feed_id: f.feed_id, feed_name: f.feed_name, quality_score: f.quality_score || 0, reasons } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.quality_score - b.quality_score)
+    .slice(0, 10);
 
-  res.json({ health: fullHealth, feedQuality, recentRuns, discoveredSources });
+  res.json({ health: fullHealth, feedQuality, feedRecommendations, recentRuns, discoveredSources });
 });
 
 // ─── Trigger pipeline run manually ────────────────────────────────────────
@@ -1019,6 +1034,29 @@ function coverageForThreat(db, threat) {
     const label = s.provider === 'otx' ? 'OTX / AlienVault' : s.provider;
     seenGroups.set(`external_${s.provider}`, label);
   });
+  const checkRows = db.prepare(`
+    SELECT observed_at, metadata
+    FROM threat_evidence
+    WHERE threat_id = ? AND evidence_type = 'gap_tracking'
+    ORDER BY observed_at DESC, id DESC
+    LIMIT 200
+  `).all(threat.id);
+  const checkedMap = new Map();
+  for (const row of checkRows) {
+    let meta = {};
+    try { meta = JSON.parse(row.metadata || '{}'); } catch {}
+    if (!meta.provider || !meta.status) continue;
+    const prev = checkedMap.get(meta.provider);
+    if (!prev || String(row.observed_at || '') > String(prev.checked_at || '')) {
+      checkedMap.set(meta.provider, {
+        provider: meta.provider,
+        status: meta.status,
+        match_type: meta.match_type,
+        match_value: meta.match_value,
+        checked_at: meta.checked_at || row.observed_at,
+      });
+    }
+  }
 
   const materialCount = cves.length + iocs.length;
   const seenElsewhere = seenGroups.size > 0 || externalProviders.length > 0;
@@ -1039,6 +1077,11 @@ function coverageForThreat(db, threat) {
     process.env.SHODAN_API_KEY ? 'Shodan' : null,
     process.env.CENSYS_API_ID ? 'Censys' : null,
   ].filter(Boolean);
+  const checkedSources = checkedProviders.map(provider => {
+    const key = provider.toLowerCase().replace(/\s+/g, '_').replace('advisories', 'advisory');
+    const row = checkedMap.get(key) || checkedMap.get(provider) || checkedMap.get(provider.toLowerCase());
+    return row || { provider, status: 'not_checked', checked_at: null };
+  });
   let confidenceScore = 35;
   const confidenceReasons = [];
   if (materialCount > 0) {
@@ -1079,6 +1122,7 @@ function coverageForThreat(db, threat) {
       reasons: confidenceReasons,
       checked_providers: checkedProviders,
     },
+    checked_sources: checkedSources,
   };
 }
 
@@ -1140,6 +1184,8 @@ function getCoverageGapData(db, days = 7, limit = 100) {
       seen_elsewhere: seenElsewhere.length,
       seen_by_us_first: seenByUsFirst.length,
       external_provider_count: Object.keys(providers).length,
+      high_confidence_unique: unique.filter(t => (t.coverage.confidence?.score || 0) >= 70).length,
+      checked_unique: unique.filter(t => (t.coverage.checked_sources || []).some(s => s.status && s.status !== 'not_checked')).length,
     },
     providers: Object.entries(providers)
       .map(([provider, count]) => ({ provider, count }))
@@ -1182,8 +1228,11 @@ function buildDemoReport(data, days = 7) {
       lines.push(`- Source: ${t.source_name}`);
       lines.push(`- Source URL: ${t.source_url || 'n/a'}`);
       lines.push(`- First seen by Radar: ${t.first_seen_by_us_at || t.ingested_at}`);
+      lines.push(`- Coverage confidence: ${t.coverage.confidence?.level || 'unknown'} (${t.coverage.confidence?.score ?? 'n/a'})`);
+      lines.push(`- Checked sources: ${formatCheckedSources(t.coverage.checked_sources || [])}`);
       lines.push(`- CVEs: ${t.cve_count || 0}; IOCs: ${t.ioc_count || 0}; actors: ${t.actor_count || 0}`);
       lines.push(`- Why it matters: ${(t.summary || '').replace(/\s+/g, ' ').slice(0, 320) || 'Source article contained extractable threat intelligence.'}`);
+      lines.push(`- Timeline: published ${t.published_at || 'n/a'}; Radar ingested ${t.first_seen_by_us_at || t.ingested_at}; coverage checked ${latestCheckedAt(t.coverage.checked_sources || []) || 'n/a'}`);
       lines.push('');
     }
   }
@@ -1203,6 +1252,15 @@ function buildDemoReport(data, days = 7) {
   lines.push('Radar compares article-sourced threats against imported external sightings and local records from commodity/common sources using exact CVE and IOC matches. Items without external sightings or shared CVE/IOC matches are treated as not-seen-elsewhere candidates, not as proof that the rest of the internet has no coverage.');
   lines.push('');
   return `${lines.join('\n')}\n`;
+}
+
+function latestCheckedAt(checks) {
+  return checks.map(c => c.checked_at).filter(Boolean).sort().pop();
+}
+
+function formatCheckedSources(checks) {
+  if (!checks.length) return 'none recorded';
+  return checks.map(c => `${c.provider}:${c.status || 'not_checked'}`).join(', ');
 }
 
 const NAMED_ACTOR_PATTERNS = [

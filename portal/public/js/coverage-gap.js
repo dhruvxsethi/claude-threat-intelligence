@@ -52,6 +52,10 @@ function renderGapRows(threats) {
       ? '<span class="coverage-chip unique">not seen elsewhere</span>'
       : '<span class="coverage-chip seen">seen elsewhere</span>';
     const seen = [...(coverage.external_providers || []), ...(coverage.seen_groups || [])];
+    const checks = (coverage.checked_sources || []).map(s => `<span class="gap-check ${s.status === 'found' ? 'found' : s.status === 'not_found' ? 'miss' : ''}">
+      ${esc(s.provider)}: ${esc((s.status || 'not_checked').replace('_', ' '))}
+    </span>`).join('');
+    const timeline = buildTimeline(t);
     const evidence = (t.evidence || []).slice(0, 3).map(e => `<div class="gap-evidence">
       <div class="gap-evidence-title">${esc(e.title || e.evidence_type || 'Evidence')}</div>
       <div class="gap-evidence-body">${esc((e.body || '').slice(0, 280))}</div>
@@ -74,9 +78,31 @@ function renderGapRows(threats) {
         <span>${esc(confidence)}</span>
         <span>${seen.length ? `Seen in ${seen.map(esc).join(', ')}` : 'No monitored/common match'}</span>
       </div>
+      <div class="gap-checks">${checks}</div>
+      <div class="gap-timeline">${timeline}</div>
       <div class="gap-evidence-grid">${evidence}</div>
     </div>`;
   }).join('');
+}
+
+function buildTimeline(t) {
+  const events = [
+    { label: 'Published', at: t.published_at },
+    { label: 'Ingested by Radar', at: t.first_seen_by_us_at || t.ingested_at },
+    { label: 'External seen', at: t.external_seen_at },
+    { label: 'Coverage checked', at: latestCheck(t.coverage?.checked_sources || []) },
+  ].filter(e => e.at).sort((a, b) => new Date(a.at) - new Date(b.at));
+
+  if (!events.length) return '';
+  return events.map(e => `<div class="gap-timeline-item">
+    <span class="gap-timeline-dot"></span>
+    <span class="gap-timeline-label">${esc(e.label)}</span>
+    <span class="gap-timeline-time">${fmtDate(e.at)}</span>
+  </div>`).join('');
+}
+
+function latestCheck(checks) {
+  return checks.map(c => c.checked_at).filter(Boolean).sort().pop();
 }
 
 async function syncExternal() {

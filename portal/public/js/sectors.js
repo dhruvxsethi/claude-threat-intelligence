@@ -20,10 +20,13 @@ async function loadSector(s) {
     </div>
   </div>`).join(''):`<div class="text-sm text-3">No CVEs this period</div>`;
 
-  const actorsHtml=d.topActors?.length?d.topActors.map(a=>`<div class="actor-card">
-    <div class="actor-name">${esc(a.name)}</div>
-    <div class="actor-meta">${a.origin_country?`🌍 ${a.origin_country} · `:''}${a.motivation||''} · ${a.cnt} threat${a.cnt!==1?'s':''}</div>
-  </div>`).join(''):`<div class="text-sm text-3">No attributed actors</div>`;
+  const actorsHtml=d.topActors?.length?`
+    <div class="sector-actor-grid">
+      ${d.topActors.map(a=>`<div class="actor-card">
+        <div class="actor-name">${esc(a.name)}</div>
+        <div class="actor-meta">${a.origin_country?`${esc(a.origin_country)} · `:''}${esc(a.motivation||'unknown')} · ${a.cnt} threat${a.cnt!==1?'s':''}</div>
+      </div>`).join('')}
+    </div>`:'';
 
   const rows=d.threats?.length?`<table class="data-table"><thead><tr>
     <th>Severity</th><th>Threat</th><th>Type</th><th>Confidence</th><th>IOCs</th><th>Age</th>
@@ -36,11 +39,15 @@ async function loadSector(s) {
     <td class="text-xs text-3">${relTime(t.ingested_at)}</td>
   </tr>`).join('')}</tbody></table>`:`<div class="empty"><div class="empty-icon">${icons[s]}</div><div class="empty-title">No ${s} threats in the last 7 days</div></div>`;
 
+  const actorsSection = actorsHtml ? `
+    <div class="card mb-6">
+      <div class="card-head"><div class="card-title">Threat Actors</div></div>
+      ${actorsHtml}
+    </div>` : '';
+
   document.getElementById('sector-content').innerHTML=`
-    <div class="bottom-grid mb-6">
-      <div class="card"><div class="card-head"><div class="card-title">🔴 Top CVEs</div></div>${cvesHtml}</div>
-      <div class="card"><div class="card-head"><div class="card-title">👤 Threat Actors</div></div>${actorsHtml}</div>
-    </div>
+    <div class="card mb-6"><div class="card-head"><div class="card-title">Top CVEs</div></div>${cvesHtml}</div>
+    ${actorsSection}
     <div class="card"><div class="card-head"><div class="card-title">${icons[s]} ${s.charAt(0).toUpperCase()+s.slice(1)} Threats (${d.threats?.length||0})</div></div><div class="table-wrap">${rows}</div></div>`;
 }
 
