@@ -39,6 +39,16 @@ function isoDaysAgo(days) {
   return new Date(Date.now() - days * 86400000).toISOString();
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isTimeoutError(error) {
+  return error?.name === 'TimeoutError'
+    || error?.name === 'AbortError'
+    || /timeout|aborted/i.test(error?.message || '');
+}
+
 function normalizeIocType(type = '') {
   const t = String(type).toLowerCase();
   if (['ipv4', 'ipv6'].includes(t)) return 'ip';
@@ -65,7 +75,7 @@ function extractCves(text = '') {
     .map(cve => cve.toUpperCase());
 }
 
-async function fetchOtxPage(apiKey, page, limit, modifiedSince, useModifiedSince = true) {
+async function fetchOtxPage(apiKey, page, limit, modifiedSince, useModifiedSince = true, timeoutMs = 45000) {
   const url = new URL(`${OTX_BASE}/pulses/subscribed`);
   url.searchParams.set('page', String(page));
   url.searchParams.set('limit', String(limit));
@@ -77,13 +87,28 @@ async function fetchOtxPage(apiKey, page, limit, modifiedSince, useModifiedSince
       'Accept': 'application/json',
       'User-Agent': 'ClaudeThreatIntelligence/1.0 OTX gap sync',
     },
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`OTX HTTP ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
-async function fetchOtxPulses(apiKey, { days, maxPages, limit }) {
+async function fetchOtxPageWithRetry(apiKey, page, limit, modifiedSince, useModifiedSince, timeoutMs, retries) {
+  let lastError;
+  for (let attempt = 1; attempt <= retries + 1; attempt++) {
+    try {
+      return await fetchOtxPage(apiKey, page, limit, modifiedSince, useModifiedSince, timeoutMs);
+    } catch (e) {
+      lastError = e;
+      if (!isTimeoutError(e) || attempt > retries) break;
+      console.warn(`OTX page ${page} timed out; retrying (${attempt}/${retries})...`);
+      await sleep(1000 * attempt);
+    }
+  }
+  throw lastError;
+}
+
+async function fetchOtxPulses(apiKey, { days, maxPages, limit, timeoutMs, retries }) {
   const modifiedSince = isoDaysAgo(days);
   const pulses = [];
   let useModifiedSince = true;
@@ -91,11 +116,14 @@ async function fetchOtxPulses(apiKey, { days, maxPages, limit }) {
   for (let page = 1; page <= maxPages; page++) {
     let data;
     try {
-      data = await fetchOtxPage(apiKey, page, limit, modifiedSince, useModifiedSince);
+      data = await fetchOtxPageWithRetry(apiKey, page, limit, modifiedSince, useModifiedSince, timeoutMs, retries);
     } catch (e) {
       if (page === 1 && useModifiedSince && /400|modified_since/i.test(e.message)) {
         useModifiedSince = false;
-        data = await fetchOtxPage(apiKey, page, limit, modifiedSince, false);
+        data = await fetchOtxPageWithRetry(apiKey, page, limit, modifiedSince, false, timeoutMs, retries);
+      } else if (isTimeoutError(e) && pulses.length > 0) {
+        console.warn(`OTX page ${page} timed out after retries; using ${pulses.length} pulses already fetched.`);
+        break;
       } else {
         throw e;
       }
@@ -224,8 +252,10 @@ if (!apiKey) {
 }
 
 const days = parseInt(argValue('days', process.env.OTX_LOOKBACK_DAYS || '14'), 10);
-const maxPages = parseInt(argValue('pages', process.env.OTX_MAX_PAGES || '5'), 10);
-const limit = parseInt(argValue('limit', process.env.OTX_PAGE_LIMIT || '50'), 10);
+const maxPages = parseInt(argValue('pages', process.env.OTX_MAX_PAGES || '3'), 10);
+const limit = parseInt(argValue('limit', process.env.OTX_PAGE_LIMIT || '25'), 10);
+const timeoutMs = parseInt(argValue('timeout-ms', process.env.OTX_TIMEOUT_MS || '45000'), 10);
+const retries = parseInt(argValue('retries', process.env.OTX_RETRIES || '2'), 10);
 
 const db = getDb(join(ROOT, 'data/threats.db'));
 migrate(db);
@@ -277,11 +307,11 @@ const markUnchecked = db.prepare(`
 
 let pulses = [];
 try {
-  pulses = await fetchOtxPulses(apiKey, { days, maxPages, limit });
+  pulses = await fetchOtxPulses(apiKey, { days, maxPages, limit, timeoutMs, retries });
 } catch (e) {
   db.close();
-  console.error(`OTX sync failed: ${e.message}`);
-  process.exit(1);
+  console.warn(`OTX sync skipped: ${e.message}. OTX is optional comparison data; primary ingestion is unaffected.`);
+  process.exit(0);
 }
 
 const rows = pulses.flatMap(rowsFromPulse);

@@ -72,7 +72,13 @@ async function fetchJson(url, options = {}) {
     },
     signal: AbortSignal.timeout(options.timeoutMs || 20000),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    const error = new Error(`HTTP ${res.status}: ${body}`);
+    error.status = res.status;
+    error.body = body;
+    throw error;
+  }
   return res.json();
 }
 
@@ -87,14 +93,32 @@ async function postForm(url, body, options = {}) {
     },
     signal: AbortSignal.timeout(options.timeoutMs || 20000),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    const error = new Error(`HTTP ${res.status}: ${body}`);
+    error.status = res.status;
+    error.body = body;
+    throw error;
+  }
   return res.json();
+}
+
+function isRateLimitError(error) {
+  return error?.status === 403 || error?.status === 429;
+}
+
+function rateLimitHint(provider) {
+  if (provider === 'github_advisory') return 'set GITHUB_TOKEN in .env for higher GitHub API limits';
+  if (provider === 'nvd') return 'set NVD_API_KEY in .env and/or increase EXTERNAL_COMPARISON_DELAY_MS';
+  return 'increase delay or add provider API credentials';
 }
 
 async function queryNvd(cve) {
   const url = new URL('https://services.nvd.nist.gov/rest/json/cves/2.0');
   url.searchParams.set('cveId', cve);
-  const data = await fetchJson(url);
+  const data = await fetchJson(url, {
+    headers: process.env.NVD_API_KEY ? { apiKey: process.env.NVD_API_KEY } : {},
+  });
   const item = data.vulnerabilities?.[0]?.cve;
   if (!item) return null;
   return {
@@ -375,9 +399,9 @@ function markChecked(db, threatIds, provider, matchType, matchValue, found, deta
 loadEnv();
 
 const days = parseInt(argValue('days', '14'), 10);
-const limitCves = parseInt(argValue('cves', '80'), 10);
-const limitIocs = parseInt(argValue('iocs', '120'), 10);
-const delayMs = parseInt(argValue('delay-ms', '650'), 10);
+const limitCves = parseInt(argValue('cves', process.env.EXTERNAL_COMPARISON_CVES || '40'), 10);
+const limitIocs = parseInt(argValue('iocs', process.env.EXTERNAL_COMPARISON_IOCS || '120'), 10);
+const delayMs = parseInt(argValue('delay-ms', process.env.EXTERNAL_COMPARISON_DELAY_MS || '1200'), 10);
 const cutoff = new Date(Date.now() - days * 86400000).toISOString();
 
 const db = getDb(DB_PATH);
@@ -404,15 +428,56 @@ const iocs = db.prepare(`
 const cveThreats = db.prepare(`
   SELECT threat_id FROM threat_cves WHERE upper(cve_id) = upper(?)
 `);
+const localCveSource = db.prepare(`
+  SELECT t.id, t.source_name, t.title, t.ingested_at, c.cvss_score, c.in_kev
+  FROM threat_cves c
+  JOIN threats t ON t.id = c.threat_id
+  WHERE upper(c.cve_id) = upper(?)
+    AND t.source_name = ?
+  ORDER BY datetime(t.ingested_at) ASC
+  LIMIT 1
+`);
 const iocThreats = db.prepare(`
   SELECT threat_id FROM threat_iocs
   WHERE ioc_type = ? AND lower(ioc_value) = lower(?)
 `);
 
+function localCveSighting(cve, provider) {
+  const sourceByProvider = {
+    nvd: 'NIST NVD',
+    github_advisory: 'GitHub Security Advisories',
+    cisa_kev: 'CISA Known Exploited Vulnerabilities',
+  };
+  const sourceName = sourceByProvider[provider];
+  if (!sourceName) return null;
+  const item = localCveSource.get(cve, sourceName);
+  if (!item) return null;
+  return {
+    provider,
+    external_id: `${provider}:local:${cve}`,
+    first_seen_at: item.ingested_at || isoNow(),
+    last_seen_at: item.ingested_at || isoNow(),
+    url: provider === 'nvd'
+      ? `https://nvd.nist.gov/vuln/detail/${cve}`
+      : provider === 'github_advisory'
+        ? `https://github.com/advisories?query=${encodeURIComponent(cve)}`
+        : 'https://www.cisa.gov/known-exploited-vulnerabilities-catalog',
+    title: item.title || cve,
+    metadata: {
+      local_source: sourceName,
+      local_threat_id: item.id,
+      cvss_score: item.cvss_score,
+      in_kev: item.in_kev,
+    },
+  };
+}
+
 let checked = 0;
 let matched = 0;
 let imported = 0;
+let skipped = 0;
 const byProvider = {};
+const providerDisabled = new Map();
 
 function record(provider, didImport, didMatch = true) {
   byProvider[provider] = byProvider[provider] || { matched: 0, imported: 0 };
@@ -427,12 +492,16 @@ const cisaKev = await loadCisaKevSet().catch(e => {
 
 for (const cve of cves) {
   const providers = [
-    ['cisa_kev', async () => cisaKev.get(cve) || null],
-    ['nvd', async () => queryNvd(cve)],
-    ['github_advisory', async () => queryGithubAdvisory(cve)],
+    ['cisa_kev', async () => localCveSighting(cve, 'cisa_kev') || cisaKev.get(cve) || null],
+    ['nvd', async () => localCveSighting(cve, 'nvd') || queryNvd(cve)],
+    ['github_advisory', async () => localCveSighting(cve, 'github_advisory') || queryGithubAdvisory(cve)],
   ];
 
   for (const [provider, fn] of providers) {
+    if (providerDisabled.has(provider)) {
+      skipped++;
+      continue;
+    }
     checked++;
     try {
       const row = await fn();
@@ -446,7 +515,12 @@ for (const cve of cves) {
         record(provider, didImport);
       }
     } catch (e) {
-      console.warn(`${provider} ${cve} skipped: ${e.message.slice(0, 160)}`);
+      if (isRateLimitError(e)) {
+        providerDisabled.set(provider, `${e.message.slice(0, 120)}; ${rateLimitHint(provider)}`);
+        console.warn(`${provider} rate limited; skipping remaining ${provider} checks this run (${rateLimitHint(provider)}).`);
+      } else {
+        console.warn(`${provider} ${cve} skipped: ${e.message.slice(0, 160)}`);
+      }
     }
     await sleep(delayMs);
   }
@@ -461,6 +535,10 @@ for (const ioc of iocs) {
   ];
 
   for (const [provider, fn] of providers) {
+    if (providerDisabled.has(provider)) {
+      skipped++;
+      continue;
+    }
     checked++;
     try {
       const row = await fn();
@@ -478,7 +556,12 @@ for (const ioc of iocs) {
         record(provider, didImport);
       }
     } catch (e) {
-      console.warn(`${provider} ${ioc.ioc_type}:${ioc.ioc_value} skipped: ${e.message.slice(0, 160)}`);
+      if (isRateLimitError(e)) {
+        providerDisabled.set(provider, `${e.message.slice(0, 120)}; ${rateLimitHint(provider)}`);
+        console.warn(`${provider} rate limited; skipping remaining ${provider} checks this run (${rateLimitHint(provider)}).`);
+      } else {
+        console.warn(`${provider} ${ioc.ioc_type}:${ioc.ioc_value} skipped: ${e.message.slice(0, 160)}`);
+      }
     }
     await sleep(delayMs);
   }
@@ -486,5 +569,11 @@ for (const ioc of iocs) {
 
 db.close();
 
-console.log(`External comparison sync complete: ${checked} checks, ${matched} matches, ${imported} new sightings.`);
+console.log(`External comparison sync complete: ${checked} checks, ${matched} matches, ${imported} new sightings, ${skipped} skipped after provider backoff.`);
 console.log(JSON.stringify(byProvider, null, 2));
+if (providerDisabled.size) {
+  console.log('Providers backed off this run:');
+  for (const [provider, reason] of providerDisabled.entries()) {
+    console.log(`- ${provider}: ${reason}`);
+  }
+}
