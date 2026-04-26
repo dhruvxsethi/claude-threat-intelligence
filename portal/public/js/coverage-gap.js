@@ -45,6 +45,9 @@ function renderGapRows(threats) {
 
   el.innerHTML = threats.map(t => {
     const coverage = t.coverage || {};
+    const confidence = coverage.confidence?.level
+      ? `${coverage.confidence.level} confidence (${coverage.confidence.score})`
+      : 'confidence not scored';
     const status = coverage.status === 'unique_candidate'
       ? '<span class="coverage-chip unique">not seen elsewhere</span>'
       : '<span class="coverage-chip seen">seen elsewhere</span>';
@@ -68,6 +71,7 @@ function renderGapRows(threats) {
         <span>${t.cve_count || 0} CVEs</span>
         <span>${t.ioc_count || 0} IOCs</span>
         <span>${t.actor_count || 0} actors</span>
+        <span>${esc(confidence)}</span>
         <span>${seen.length ? `Seen in ${seen.map(esc).join(', ')}` : 'No monitored/common match'}</span>
       </div>
       <div class="gap-evidence-grid">${evidence}</div>

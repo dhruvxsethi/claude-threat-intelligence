@@ -133,9 +133,42 @@ function findChrome() {
   return chromeCandidates().find(p => p.includes('/') ? existsSync(p) : p);
 }
 
+export async function fetchArticleWithPlaywright(url, timeoutMs = 30000) {
+  let chromium;
+  try {
+    ({ chromium } = await import('playwright-core'));
+  } catch {
+    return { success: false, error: 'playwright-core not installed' };
+  }
+  const executablePath = findChrome();
+  if (!executablePath) return { success: false, error: 'No local Chrome/Chromium executable found for Playwright' };
+
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true, executablePath });
+    const page = await browser.newPage({
+      userAgent: 'Mozilla/5.0 (compatible; RadarThreatIntelligence/1.0; security research)',
+    });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    try {
+      await page.waitForLoadState('networkidle', { timeout: Math.min(8000, timeoutMs) });
+    } catch {}
+    const html = await page.content();
+    const finalUrl = page.url();
+    await browser.close();
+    return { success: true, html, finalUrl, rendered: true, renderer: 'playwright' };
+  } catch (err) {
+    try { await browser?.close(); } catch {}
+    return { success: false, error: `Playwright render failed: ${err.message}` };
+  }
+}
+
 export async function fetchArticleWithBrowser(url, timeoutMs = 30000) {
+  const playwrightResult = await fetchArticleWithPlaywright(url, timeoutMs);
+  if (playwrightResult.success) return playwrightResult;
+
   const chrome = findChrome();
-  if (!chrome) return { success: false, error: 'No Chrome/Chromium executable found' };
+  if (!chrome) return { success: false, error: `${playwrightResult.error}; no Chrome/Chromium executable found` };
 
   try {
     const { stdout } = await execFileAsync(chrome, [
@@ -157,7 +190,7 @@ export async function fetchArticleWithBrowser(url, timeoutMs = 30000) {
     });
 
     if (!stdout || stdout.length < 200) return { success: false, error: 'Rendered DOM too short' };
-    return { success: true, html: stdout, finalUrl: url, rendered: true };
+    return { success: true, html: stdout, finalUrl: url, rendered: true, renderer: 'chrome_dump_dom' };
   } catch (err) {
     return { success: false, error: `Browser render failed: ${err.message}` };
   }
@@ -265,11 +298,11 @@ export async function scrapeArticle(url, cacheEnabled = true) {
     }
   }
 
-  let { success, html, error, finalUrl, rendered } = await fetchArticle(url);
+  let { success, html, error, finalUrl, rendered, renderer } = await fetchArticle(url);
   if (!success && process.env.BROWSER_RENDERED_SCRAPE !== 'false') {
     const browserResult = await fetchArticleWithBrowser(url);
     if (browserResult.success) {
-      ({ success, html, error, finalUrl, rendered } = browserResult);
+      ({ success, html, error, finalUrl, rendered, renderer } = browserResult);
     }
   }
   if (!success) return { success: false, error };
@@ -286,7 +319,7 @@ export async function scrapeArticle(url, cacheEnabled = true) {
             success: true,
             url: browserResult.finalUrl || url,
             ...browserExtracted,
-            extraction_method: `browser_rendered:${browserExtracted.extraction_method}`,
+            extraction_method: `${browserResult.renderer || 'browser_rendered'}:${browserExtracted.extraction_method}`,
           };
           if (cacheEnabled) {
             writeFileSync(cachePath, JSON.stringify({ cached_at: new Date().toISOString(), data: result }));
@@ -306,7 +339,7 @@ export async function scrapeArticle(url, cacheEnabled = true) {
     success: true,
     url: finalUrl || url,
     ...extracted,
-    extraction_method: rendered ? `browser_rendered:${extracted.extraction_method}` : extracted.extraction_method,
+    extraction_method: rendered ? `${renderer || 'browser_rendered'}:${extracted.extraction_method}` : extracted.extraction_method,
   };
 
   if (cacheEnabled) {

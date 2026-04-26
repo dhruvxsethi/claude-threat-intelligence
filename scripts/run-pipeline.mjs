@@ -52,6 +52,31 @@ function newestFirst(a, b) {
   return (parseTime(b.published_at) || 0) - (parseTime(a.published_at) || 0);
 }
 
+function hoursSince(value) {
+  const ts = parseTime(value);
+  if (!ts) return null;
+  return Math.max(0, (Date.now() - ts) / 3600000);
+}
+
+function lastSuccessfulPipelineRun(db) {
+  return db.prepare(`
+    SELECT completed_at
+    FROM feed_runs
+    WHERE feed_id = 'pipeline' AND status IN ('success','partial') AND completed_at IS NOT NULL
+    ORDER BY completed_at DESC
+    LIMIT 1
+  `).get()?.completed_at || null;
+}
+
+function effectiveLookbackHours(db, settings) {
+  const base = settings.claude.max_article_age_hours || 48;
+  const cap = settings.pipeline?.catchup_max_hours || 168;
+  const lastCompleted = lastSuccessfulPipelineRun(db);
+  const offlineHours = hoursSince(lastCompleted);
+  if (!offlineHours) return base;
+  return Math.min(cap, Math.max(base, Math.ceil(offlineHours + 6)));
+}
+
 function threatExistsBySourceUrl(db, sourceUrl) {
   if (!sourceUrl) return false;
   return !!db.prepare('SELECT 1 FROM threats WHERE source_url = ?').get(sourceUrl);
@@ -454,7 +479,7 @@ async function processVulnerabilityApis(db, correlator, settings) {
 
   const [nvdResult, kevResult, githubResult] = await Promise.all([
     fetchNvdCves({ hoursBack: windowHours }),
-    fetchCisaKev(),
+    fetchCisaKev({ daysBack: Math.max(7, Math.ceil(windowHours / 24)) }),
     fetchGithubAdvisories({ hoursBack: windowHours }),
   ]);
 
@@ -503,7 +528,7 @@ async function processVulnerabilityApis(db, correlator, settings) {
   // CISA KEV
   if (kevResult.success && kevResult.vulnerabilities.length > 0) {
     const kevItems = kevResult.vulnerabilities.slice(0, maxKevItems);
-    info(`CISA KEV: ${kevResult.vulnerabilities.length} entries added in last 7 days; analyzing newest ${kevItems.length}`);
+    info(`CISA KEV: ${kevResult.vulnerabilities.length} entries added in last ${Math.max(7, Math.ceil(windowHours / 24))} days; analyzing newest ${kevItems.length}`);
     for (const vuln of kevItems) {
       const existing = db.prepare('SELECT id FROM threat_cves WHERE cve_id = ?').get(vuln.cveID);
       if (existing) {
@@ -646,12 +671,21 @@ async function run() {
   try {
     pipelineRunId = startFeedRun(db, runId, 'pipeline', 'Full threat intelligence pipeline', 'BOTH');
 
+    const lookbackHours = effectiveLookbackHours(db, settings);
+    if (lookbackHours !== (settings.claude.max_article_age_hours || 48)) {
+      info(`Catch-up lookback active: ${lookbackHours}h`);
+    }
+    const effectiveSettings = {
+      ...settings,
+      claude: { ...settings.claude, max_article_age_hours: lookbackHours },
+    };
+
     // 1. Vulnerability APIs (NVD + CISA KEV + GitHub Advisories)
-    const vulnResult = await processVulnerabilityApis(db, correlator, settings);
+    const vulnResult = await processVulnerabilityApis(db, correlator, effectiveSettings);
     totalThreats += vulnResult.threats;
 
     // 2. RSS feeds
-    const { rssResults } = await runAllFeeds(db, info);
+    const { rssResults } = await runAllFeeds(db, info, effectiveSettings);
     const allItems = rssResults.flatMap(r =>
       (r.items || []).map(item => ({
         ...item,
@@ -661,7 +695,7 @@ async function run() {
     );
     totalArticles = allItems.length;
 
-    const { analyzed, threats, errors, newItems } = await processArticles(db, allItems, dedup, correlator, settings);
+    const { analyzed, threats, errors, newItems } = await processArticles(db, allItems, dedup, correlator, effectiveSettings);
     totalThreats += threats;
     totalErrors  += errors;
     finishFeedRun(db, pipelineRunId, {

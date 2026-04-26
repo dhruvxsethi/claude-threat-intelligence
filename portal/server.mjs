@@ -75,6 +75,30 @@ function broadcastSse(event, data) {
   });
 }
 
+function spawnPipeline(reason = 'manual') {
+  if (_pipelineRunning) return { started: false, status: 'already_running' };
+  _pipelineRunning = true;
+  broadcastSse('pipeline_started', { runId: Date.now(), reason });
+
+  const child = spawn('node', ['scripts/run-pipeline.mjs'], {
+    cwd: ROOT,
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let stdoutBuf = '';
+  child.stdout.on('data', d => { stdoutBuf += d.toString(); process.stdout.write(d); });
+  child.stderr.on('data', d => process.stderr.write(d));
+  child.on('close', (code) => {
+    _pipelineRunning = false;
+    const m = stdoutBuf.match(/Threats saved:\s+(\d+)/);
+    const threats_created = m ? parseInt(m[1]) : 0;
+    broadcastSse('pipeline_done', { threats_created, code, reason });
+  });
+
+  return { started: true, status: 'started' };
+}
+
 const app = express();
 app.use(express.json());
 app.use(express.static(join(__dirname, 'public')));
@@ -594,30 +618,7 @@ let _otxRunning = false;
 let _externalRunning = false;
 
 app.post('/api/pipeline/run', (req, res) => {
-  if (_pipelineRunning) {
-    return res.json({ status: 'already_running' });
-  }
-  _pipelineRunning = true;
-  broadcastSse('pipeline_started', { runId: Date.now() });
-  res.json({ status: 'started' });
-
-  // Inherit server's environment (includes OLLAMA_MODEL, ANTHROPIC_API_KEY from .env)
-  const child = spawn('node', ['scripts/run-pipeline.mjs'], {
-    cwd: ROOT,
-    env: process.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  let stdoutBuf = '';
-  child.stdout.on('data', d => { stdoutBuf += d.toString(); });
-  child.stderr.on('data', d => process.stderr.write(d));
-
-  child.on('close', (code) => {
-    _pipelineRunning = false;
-    const m = stdoutBuf.match(/Threats saved:\s+(\d+)/);
-    const threats_created = m ? parseInt(m[1]) : 0;
-    broadcastSse('pipeline_done', { threats_created, code });
-  });
+  res.json(spawnPipeline('manual'));
 });
 
 // Called by the pipeline script at the end of each run to trigger browser refresh
@@ -1026,6 +1027,39 @@ function coverageForThreat(db, threat) {
     : seenElsewhere
       ? 'seen_elsewhere'
       : 'unique_candidate';
+  const exactExternalMatches = sightings.filter(s => ['cve', 'ioc', 'url'].includes(s.match_type)).length;
+  const exactLocalMatches = matchCount;
+  const checkedProviders = [
+    'NVD',
+    'CISA KEV',
+    'GitHub Advisories',
+    'OTX',
+    'MalwareBazaar',
+    'URLHaus',
+    process.env.SHODAN_API_KEY ? 'Shodan' : null,
+    process.env.CENSYS_API_ID ? 'Censys' : null,
+  ].filter(Boolean);
+  let confidenceScore = 35;
+  const confidenceReasons = [];
+  if (materialCount > 0) {
+    confidenceScore += 20;
+    confidenceReasons.push('has exact CVE/IOC material');
+  } else {
+    confidenceReasons.push('source-only comparison');
+  }
+  if (exactExternalMatches > 0) {
+    confidenceScore += 35;
+    confidenceReasons.push('matched external source by exact CVE/IOC/URL');
+  } else if (exactLocalMatches > 0) {
+    confidenceScore += 25;
+    confidenceReasons.push('matched monitored source by exact CVE/IOC');
+  } else if (status === 'unique_candidate' && materialCount > 0) {
+    confidenceScore += 15;
+    confidenceReasons.push('no exact match in monitored comparison set');
+  }
+  if (checkedProviders.length >= 5) confidenceScore += 5;
+  confidenceScore = Math.max(0, Math.min(100, confidenceScore));
+  const confidenceLevel = confidenceScore >= 80 ? 'high' : confidenceScore >= 55 ? 'medium' : 'low';
 
   return {
     status,
@@ -1039,7 +1073,12 @@ function coverageForThreat(db, threat) {
       reasons: [...s.reasons].slice(0, 5),
     })).slice(0, 8),
     match_count: matchCount + sightings.length,
-    confidence: materialCount > 0 ? 'strong' : 'source-only',
+    confidence: {
+      level: confidenceLevel,
+      score: confidenceScore,
+      reasons: confidenceReasons,
+      checked_providers: checkedProviders,
+    },
   };
 }
 
@@ -1400,6 +1439,39 @@ function scheduleExternalComparison() {
   console.log(`✓ External comparison scheduled: ${schedule}`);
 }
 
+function scheduleStartupCatchup() {
+  if (settings.pipeline?.startup_catchup_enabled === false) {
+    console.log('○ Startup catch-up disabled');
+    return;
+  }
+
+  const thresholdHours = settings.pipeline?.startup_catchup_after_hours || 3;
+  const row = ensureDb().prepare(`
+    SELECT completed_at
+    FROM feed_runs
+    WHERE feed_id = 'pipeline' AND status IN ('success','partial') AND completed_at IS NOT NULL
+    ORDER BY completed_at DESC
+    LIMIT 1
+  `).get();
+
+  const completedAt = Date.parse(row?.completed_at || '');
+  const hoursSince = Number.isFinite(completedAt) ? (Date.now() - completedAt) / 3600000 : Infinity;
+
+  if (hoursSince < thresholdHours) {
+    console.log(`○ Startup catch-up not needed: last pipeline ${hoursSince.toFixed(1)}h ago`);
+    return;
+  }
+
+  const reason = Number.isFinite(hoursSince)
+    ? `startup_catchup_${Math.round(hoursSince)}h`
+    : 'startup_catchup_first_run';
+  console.log(`✓ Startup catch-up queued: ${reason}`);
+  setTimeout(() => {
+    const result = spawnPipeline(reason);
+    if (!result.started) console.log('[CATCHUP] Pipeline already running, startup catch-up skipped');
+  }, 2500);
+}
+
 // ─── Start ────────────────────────────────────────────────────────────────
 
 ensureDb();
@@ -1407,6 +1479,7 @@ schedulePipeline();
 scheduleSourceDiscovery();
 scheduleOtxSync();
 scheduleExternalComparison();
+scheduleStartupCatchup();
 
 app.listen(PORT, () => {
   console.log(`\n  Radar — Threat Intelligence`);

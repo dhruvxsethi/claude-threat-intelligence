@@ -64,6 +64,8 @@ The pipeline switches automatically. No API costs.
 - GitHub Security Advisories are ingested as first-class advisory items and normalized through the same AI extraction path as articles.
 - RSS items are deduped by normalized URL and content hash. New RSS items older than `claude.max_article_age_hours` are marked stale so old backlog does not consume the analysis budget.
 - Fresh RSS items are analyzed newest-first, up to `claude.max_articles_per_run`.
+- If the portal restarts after downtime, startup catch-up automatically runs when the last successful pipeline is older than `pipeline.startup_catchup_after_hours`.
+- Catch-up runs expand the article/API lookback window up to `pipeline.catchup_max_hours` and can fetch up to `feeds.catchup_max_items_per_feed` items per RSS feed.
 - Pipeline runs are written to `feed_runs`, and source health is written to `feed_health`.
 
 ## Gap Tracking & Evidence
@@ -111,6 +113,10 @@ The portal also schedules discovery daily by default (`feeds.discovery_cron_sche
 **"Sync Now" button** — triggers the pipeline immediately from the browser. The portal runs it as a child process and broadcasts a `pipeline_done` event when it's done, causing all connected browsers to reload their data without a page refresh.
 
 **Hourly cron** — runs automatically inside `portal/server.mjs` every hour as long as the portal is running.
+
+**Startup catch-up** — if the portal was offline longer than the configured threshold, it queues an ingestion run shortly after startup.
+
+**JS-heavy scraping** — normal HTML fetch is attempted first. If content is blocked or too short, the scraper falls back to Playwright Core with local Chrome/Chromium, then Chrome `dump-dom`.
 
 **Ollama** — the pipeline calls Ollama's local API (`http://localhost:11434`) instead of Anthropic's API when `OLLAMA_MODEL` is set. Ollama must be running separately (`ollama serve`).
 

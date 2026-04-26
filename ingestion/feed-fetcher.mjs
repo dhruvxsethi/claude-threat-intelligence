@@ -58,10 +58,10 @@ function normalizeNvdCve(v) {
   };
 }
 
-export async function fetchRssFeed(feed) {
+export async function fetchRssFeed(feed, { maxItems = 30 } = {}) {
   try {
     const result = await parser.parseURL(feed.url);
-    const items = (result.items || []).slice(0, 30).map(item => ({
+    const items = (result.items || []).slice(0, maxItems).map(item => ({
       url: item.link || item.guid,
       title: item.title || '',
       description: item['content:encoded'] || item.content || item.description || item.contentSnippet || '',
@@ -117,7 +117,7 @@ export async function fetchNvdCves({ hoursBack = 48, resultsPerPage = 2000, maxP
   }
 }
 
-export async function fetchCisaKev() {
+export async function fetchCisaKev({ daysBack = 7 } = {}) {
   try {
     const res = await fetch(
       'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json',
@@ -125,7 +125,7 @@ export async function fetchCisaKev() {
     );
     if (!res.ok) return { success: false, vulnerabilities: [], error: `HTTP ${res.status}` };
     const data = await res.json();
-    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
     const recent = (data.vulnerabilities || []).filter(v =>
       v.dateAdded && new Date(v.dateAdded) > cutoff
     );
@@ -182,10 +182,20 @@ export async function fetchGithubAdvisories({ hoursBack = 48, perPage = 100 } = 
   }
 }
 
-export async function runAllFeeds(db, log = console.log) {
+function hoursSince(value) {
+  const ts = Date.parse(value || '');
+  if (!Number.isFinite(ts)) return Infinity;
+  return Math.max(0, (Date.now() - ts) / 3600000);
+}
+
+export async function runAllFeeds(db, log = console.log, settings = {}) {
   const feedsConfig = loadFeedsConfig();
   // Fetch ALL enabled RSS feeds — no slot rotation
   const rssFeeds = feedsConfig.feeds.filter(f => f.enabled && f.type === 'rss');
+  const baseMaxItems = settings.feeds?.max_items_per_feed || 30;
+  const catchupMaxItems = settings.feeds?.catchup_max_items_per_feed || 100;
+  const catchupAfterHours = settings.pipeline?.startup_catchup_after_hours || 3;
+  const healthRows = Object.fromEntries(db.prepare('SELECT feed_id, last_success FROM feed_health').all().map(r => [r.feed_id, r]));
 
   log(`\nFetching ${rssFeeds.length} RSS feeds in parallel...`);
   const results = [];
@@ -194,7 +204,11 @@ export async function runAllFeeds(db, log = console.log) {
   const concurrency = 8;
   for (let i = 0; i < rssFeeds.length; i += concurrency) {
     const batch = rssFeeds.slice(i, i + concurrency);
-    const batchResults = await Promise.all(batch.map(f => fetchRssFeed(f)));
+    const batchResults = await Promise.all(batch.map(f => {
+      const downtimeHours = hoursSince(healthRows[f.id]?.last_success);
+      const maxItems = downtimeHours >= catchupAfterHours ? catchupMaxItems : baseMaxItems;
+      return fetchRssFeed(f, { maxItems });
+    }));
     results.push(...batchResults.map((r, j) => ({ feed: batch[j], ...r })));
   }
 

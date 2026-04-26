@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { scoreCredibility, normalizeSeverity, adjustIocConfidence } from './credibility.mjs';
+import { deriveActorsFromText, mergeActors } from './actor-extractor.mjs';
 
 export function normalizeArticleThreat(analysisData, article, feedMeta) {
   const id = uuidv4();
@@ -23,6 +24,15 @@ export function normalizeArticleThreat(analysisData, article, feedMeta) {
     government: analysisData.sector_impact?.government || { score: 0, reason: 'Not directly relevant' },
     healthcare: analysisData.sector_impact?.healthcare || { score: 0, reason: 'Not directly relevant' },
   };
+
+  const actors = mergeActors(
+    analysisData.threat_actors || [],
+    deriveActorsFromText({
+      title: analysisData.title || article.title || '',
+      summary: analysisData.summary || '',
+      content: article.content || '',
+    })
+  );
 
   return {
     id,
@@ -57,7 +67,7 @@ export function normalizeArticleThreat(analysisData, article, feedMeta) {
     _cves: normalizeCves(analysisData.cves || [], id),
     _iocs: normalizeIocs(adjustedIocs || [], id),
     _ttps: normalizeTtps(analysisData.ttps || [], id),
-    _actors: normalizeActors(analysisData.threat_actors || [], id),
+    _actors: normalizeActors(actors, id),
   };
 }
 

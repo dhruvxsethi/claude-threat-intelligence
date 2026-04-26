@@ -36,6 +36,10 @@ pipeline:
   max_nvd_items_per_run: 25
   max_github_advisories_per_run: 25
   max_cisa_kev_items_per_run: 15
+  # If the portal was offline longer than this, run a catch-up scan on startup.
+  startup_catchup_enabled: true
+  startup_catchup_after_hours: 3
+  catchup_max_hours: 168
 
 integrations:
   otx:
@@ -79,6 +83,9 @@ feeds:
   discovery_cron_schedule: "0 2 * * *"
   # Max feed fetch timeout (ms)
   fetch_timeout: 10000
+  # Normal RSS fetch cap and offline catch-up cap per feed.
+  max_items_per_feed: 30
+  catchup_max_items_per_feed: 100
 
 database:
   path: "data/threats.db"

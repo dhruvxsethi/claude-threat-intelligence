@@ -88,6 +88,7 @@ async function loadUniqueFinds() {
 
   el.innerHTML = rows.map(t => {
     const coverage = t.coverage || {};
+    const confidence = coverage.confidence?.level || coverage.confidence || 'source-only';
     const chips = [
       `<span class="coverage-chip unique">not seen elsewhere</span>`,
       (t.ioc_count || 0) > 0 ? `<span class="coverage-chip">${t.ioc_count} IOCs</span>` : '',
@@ -99,7 +100,7 @@ async function loadUniqueFinds() {
       <div>${sevBadge(t.severity)}</div>
       <div>
         <div class="unique-title"><a href="/threat-detail.html?id=${t.id}">${esc(t.title)}</a></div>
-        <div class="unique-meta">${esc(t.source_name || 'Unknown source')} · ${relTime(t.ingested_at)} · ${esc(coverage.confidence || 'source-only')}</div>
+        <div class="unique-meta">${esc(t.source_name || 'Unknown source')} · ${relTime(t.ingested_at)} · ${esc(confidence)}</div>
         <div class="unique-coverage">${chips}</div>
       </div>
       <a class="card-link" href="/threat-detail.html?id=${t.id}">Evidence</a>
