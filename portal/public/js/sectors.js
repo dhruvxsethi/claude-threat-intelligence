@@ -40,15 +40,25 @@ async function loadSector(s) {
   </tr>`).join('')}</tbody></table>`:`<div class="empty"><div class="empty-icon">${icons[s]}</div><div class="empty-title">No ${s} threats in the last 7 days</div></div>`;
 
   const actorsSection = actorsHtml ? `
-    <div class="card mb-6">
+    <div class="card">
       <div class="card-head"><div class="card-title">Threat Actors</div></div>
       ${actorsHtml}
     </div>` : '';
 
   document.getElementById('sector-content').innerHTML=`
-    <div class="card mb-6"><div class="card-head"><div class="card-title">Top CVEs</div></div>${cvesHtml}</div>
-    ${actorsSection}
-    <div class="card"><div class="card-head"><div class="card-title">${icons[s]} ${s.charAt(0).toUpperCase()+s.slice(1)} Threats (${d.threats?.length||0})</div></div><div class="table-wrap">${rows}</div></div>`;
+    <div class="sector-layout">
+      <div class="card sector-main">
+        <div class="card-head"><div class="card-title">${icons[s]} ${s.charAt(0).toUpperCase()+s.slice(1)} Threats (${d.threats?.length||0})</div></div>
+        <div class="table-wrap">${rows}</div>
+      </div>
+      <aside class="sector-side">
+        <div class="card">
+          <div class="card-head"><div class="card-title">Top CVEs</div></div>
+          <div class="sector-cve-list">${cvesHtml}</div>
+        </div>
+        ${actorsSection}
+      </aside>
+    </div>`;
 }
 
 loadSector('banking');

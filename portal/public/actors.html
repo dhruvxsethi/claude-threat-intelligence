@@ -306,11 +306,81 @@
       align-items: start;
     }
 
+    .actor-filter-panel {
+      padding: 16px;
+    }
+
+    .actor-filter-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+      align-items: center;
+      justify-items: center;
+    }
+
+    .actor-filter-group {
+      width: 100%;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .actor-filter-group .fp-label {
+      min-width: 0;
+      text-align: center;
+    }
+
+    .actor-filter-group .filter-group {
+      width: 100%;
+      display: grid;
+      gap: 4px;
+      padding: 4px;
+      justify-content: center;
+    }
+
+    .actor-filter-group--motivation .filter-group {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      max-width: 1120px;
+    }
+
+    .actor-filter-group--soph .filter-group {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      max-width: 760px;
+    }
+
+    .actor-filter-group .filter-pill {
+      width: 100%;
+      min-width: 0;
+      min-height: 34px;
+      padding: 6px 8px;
+      font-size: 0.62rem;
+    }
+
+    .actor-filter-group .filter-pill:focus {
+      outline: none;
+    }
+
+    .actor-filter-group .filter-pill:focus-visible {
+      box-shadow: inset 0 0 0 1px rgba(79,142,247,0.55);
+    }
+
     @media (max-width: 960px) {
       .actors-layout { grid-template-columns: 1fr; }
       .actor-grid { grid-template-columns: 1fr; }
       .actor-summary-bar { grid-template-columns: repeat(2, 1fr); }
       .actor-modal-backdrop { padding: 12px; }
+      .actor-filter-grid { grid-template-columns: 1fr; }
+      .actor-filter-group--motivation .filter-group,
+      .actor-filter-group--soph .filter-group {
+        display: flex;
+        overflow-x: auto;
+      }
+      .actor-filter-group .filter-pill {
+        width: auto;
+        min-width: 96px;
+      }
     }
   </style>
 </head>
@@ -364,9 +434,9 @@
     <!-- Left: filter controls + grid -->
     <div>
       <!-- Motivation filter + sort -->
-      <div class="filter-panel mb-4">
-        <div class="filter-panel-row">
-          <div class="fp-group">
+      <div class="filter-panel actor-filter-panel mb-4">
+        <div class="actor-filter-grid">
+          <div class="actor-filter-group actor-filter-group--motivation">
             <span class="fp-label">Motivation</span>
             <div class="filter-group">
               <button class="filter-pill active" onclick="setMotiv(this,'')">All</button>
@@ -377,7 +447,7 @@
               <button class="filter-pill" onclick="setMotiv(this,'cyberwarfare')">Warfare</button>
             </div>
           </div>
-          <div class="fp-group">
+          <div class="actor-filter-group actor-filter-group--soph">
             <span class="fp-label">Sophistication</span>
             <div class="filter-group">
               <button class="filter-pill active" onclick="setSoph(this,'')">All</button>
