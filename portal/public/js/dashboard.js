@@ -30,6 +30,7 @@ async function loadStats() {
   setText('s-iocs',     d.summary?.ioc_count    || 0);
   setText('s-feeds',    d.summary?.feeds_active || 0);
   setText('s-total',    d.summary?.total        || 0);
+  setText('s-articles', d.summary?.article_count || 0);
 
   (d.sector_stats || []).forEach(s => setText(`sec-${s.sector}`, s.count));
 

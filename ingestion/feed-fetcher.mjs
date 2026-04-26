@@ -29,6 +29,42 @@ export function loadSettings() {
   return yaml.load(raw);
 }
 
+function stableFeedId(prefix, value) {
+  return `${prefix}_${createHash('sha1').update(String(value || '')).digest('hex').slice(0, 12)}`;
+}
+
+function loadPromotedFeeds(db, settings = {}) {
+  if (!db || settings.feeds?.auto_promote_discovered === false) return [];
+  try {
+    return db.prepare(`
+      SELECT url, title, confidence, metadata
+      FROM discovered_sources
+      WHERE status = 'added'
+        AND source_type = 'rss'
+      ORDER BY confidence DESC, discovered_at DESC
+      LIMIT ?
+    `).all(settings.feeds?.max_auto_promoted_feeds || 25).map(row => {
+      let metadata = {};
+      try { metadata = JSON.parse(row.metadata || '{}'); } catch {}
+      const sourceTier = metadata.source_tier || (row.confidence >= 85 ? 2 : row.confidence >= 70 ? 3 : 4);
+      return {
+        id: stableFeedId('auto', row.url),
+        name: row.title || metadata.title || new URL(row.url).hostname,
+        url: row.url,
+        type: 'rss',
+        tier: sourceTier,
+        rotation_slot: 'B',
+        sectors: metadata.sectors || ['banking', 'government', 'healthcare'],
+        enabled: true,
+        source_credibility: Math.max(60, Math.min(90, row.confidence || 70)),
+        auto_discovered: true,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
 function isoDateForApi(date) {
   return date.toISOString().replace(/\.\d{3}Z$/, '.000Z');
 }
@@ -191,13 +227,21 @@ function hoursSince(value) {
 export async function runAllFeeds(db, log = console.log, settings = {}) {
   const feedsConfig = loadFeedsConfig();
   // Fetch ALL enabled RSS feeds — no slot rotation
-  const rssFeeds = feedsConfig.feeds.filter(f => f.enabled && f.type === 'rss');
+  const configuredRssFeeds = feedsConfig.feeds.filter(f => f.enabled && f.type === 'rss');
+  const promotedFeeds = loadPromotedFeeds(db, settings);
+  const seenUrls = new Set();
+  const rssFeeds = [...configuredRssFeeds, ...promotedFeeds].filter(feed => {
+    const key = String(feed.url || '').trim().toLowerCase();
+    if (!key || seenUrls.has(key)) return false;
+    seenUrls.add(key);
+    return true;
+  });
   const baseMaxItems = settings.feeds?.max_items_per_feed || 30;
   const catchupMaxItems = settings.feeds?.catchup_max_items_per_feed || 100;
   const catchupAfterHours = settings.pipeline?.startup_catchup_after_hours || 3;
   const healthRows = Object.fromEntries(db.prepare('SELECT feed_id, last_success FROM feed_health').all().map(r => [r.feed_id, r]));
 
-  log(`\nFetching ${rssFeeds.length} RSS feeds in parallel...`);
+  log(`\nFetching ${rssFeeds.length} RSS feeds in parallel (${configuredRssFeeds.length} configured, ${promotedFeeds.length} auto-promoted)...`);
   const results = [];
 
   // Concurrency-controlled parallel fetch

@@ -7,6 +7,7 @@ async function loadFeeds() {
   const recommendations = d.feedRecommendations || [];
   const runs   = d.recentRuns || [];
   const discovered = d.discoveredSources || [];
+  const automation = d.sourceAutomation || {};
 
   const active   = feeds.filter(f => f.enabled !== false);
   const healthy  = active.filter(f => f.is_healthy).length;
@@ -21,6 +22,7 @@ async function loadFeeds() {
   renderQuality(quality);
   renderRecommendations(recommendations);
   renderDiscovered(discovered);
+  setText('source-automation-summary', `${automation.autoPromoted || 0} auto-added · ${automation.autoRejected || 0} auto-rejected · ${automation.pendingReview || 0} watchlist`);
   renderRuns(runs);
 }
 
@@ -188,7 +190,16 @@ function renderDiscovered(sources) {
     el.innerHTML = '<div class="text-sm text-3" style="padding:16px">No discovered candidates yet. Run npm run discover:sources.</div>';
     return;
   }
-  el.innerHTML = sources.map(s => `<div class="feed-item">
+  el.innerHTML = sources.map(s => {
+    const status = s.status || 'new';
+    const statusLabel = status === 'added'
+      ? 'auto-added'
+      : status === 'rejected'
+        ? 'auto-rejected'
+        : status === 'reviewed'
+          ? 'watchlist'
+          : status;
+    return `<div class="feed-item" style="${status === 'rejected' ? 'opacity:.55' : ''}">
     <div class="feed-dot ${s.status === 'new' ? 'never' : s.status === 'added' ? 'ok' : 'disabled'}"></div>
     <div class="feed-info">
       <div class="feed-name"><a href="${esc(s.url)}" target="_blank" rel="noreferrer">${esc(s.title || s.url)}</a></div>
@@ -196,8 +207,9 @@ function renderDiscovered(sources) {
     </div>
     <span class="feed-count">${s.confidence || 0}%</span>
     <span class="feed-time">${s.discovered_at ? relTime(s.discovered_at) : '—'}</span>
-    <span class="badge badge-unknown" style="font-size:.6rem">${esc(s.status || 'new')}</span>
-  </div>`).join('');
+    <span class="badge badge-${status === 'added' ? 'low' : status === 'rejected' ? 'critical' : 'unknown'}" style="font-size:.6rem">${esc(statusLabel)}</span>
+  </div>`;
+  }).join('');
 }
 
 loadFeeds();

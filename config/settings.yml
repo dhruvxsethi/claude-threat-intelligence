@@ -81,6 +81,11 @@ feeds:
   discovery_interval: 24
   # Cron expression for local source discovery suggestions
   discovery_cron_schedule: "0 2 * * *"
+  # Automatically promote high-confidence discovered RSS feeds into ingestion.
+  # Promoted feeds are stored in SQLite, not written back into config/feeds.yml.
+  auto_promote_discovered: true
+  max_auto_promoted_feeds: 25
+  auto_promote_threshold: 72
   # Max feed fetch timeout (ms)
   fetch_timeout: 10000
   # Normal RSS fetch cap and offline catch-up cap per feed.

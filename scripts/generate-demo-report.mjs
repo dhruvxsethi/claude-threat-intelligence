@@ -58,15 +58,27 @@ function coverageForThreat(db, threat) {
   }
 
   const external = [...new Set(sightings.map(s => s.provider).filter(Boolean))];
+  const completedChecks = checks.filter(c => ['found', 'not_found'].includes(c.status));
+  const coverageState = completedChecks.length >= 4
+    ? 'fully_checked'
+    : completedChecks.length > 0
+      ? 'partially_checked'
+      : 'not_checked';
   return {
     status: isCommoditySource(threat.source_name) ? 'commodity_database' : (seenSources.size || external.length ? 'seen_elsewhere' : 'unique_candidate'),
     seen_sources: [...seenSources],
     external_providers: external,
     match_material: { cves: cves.length, iocs: iocs.length },
     checked_sources: checks,
+    coverage_state: coverageState,
+    coverage_counts: {
+      checked: completedChecks.length,
+      total: 6,
+      missing: Math.max(0, 6 - completedChecks.length),
+    },
     confidence: {
       level: cves.length + iocs.length ? 'medium' : 'low',
-      score: cves.length + iocs.length ? 70 : 35,
+      score: Math.max(0, Math.min(100, (cves.length + iocs.length ? 70 : 35) + (coverageState === 'fully_checked' ? 8 : coverageState === 'partially_checked' ? 3 : -15))),
     },
   };
 }
@@ -98,6 +110,7 @@ function buildReport(data, days) {
     lines.push(`- Source URL: ${t.source_url || 'n/a'}`);
     lines.push(`- First seen by Radar: ${t.first_seen_by_us_at || t.ingested_at}`);
     lines.push(`- Coverage confidence: ${t.coverage.confidence.level} (${t.coverage.confidence.score})`);
+    lines.push(`- Coverage completeness: ${formatCoverageState(t.coverage)}`);
     lines.push(`- Checked sources: ${formatChecks(t.coverage.checked_sources)}`);
     lines.push(`- CVEs: ${t.cve_count}; IOCs: ${t.ioc_count}`);
     lines.push(`- Timeline: published ${t.published_at || 'n/a'}; Radar ingested ${t.first_seen_by_us_at || t.ingested_at}; coverage checked ${latestCheck(t.coverage.checked_sources) || 'n/a'}`);
@@ -124,6 +137,12 @@ function latestCheck(checks = []) {
 function formatChecks(checks = []) {
   if (!checks.length) return 'none recorded';
   return checks.map(c => `${c.provider}:${c.status || 'unknown'}`).join(', ');
+}
+
+function formatCoverageState(coverage = {}) {
+  const state = String(coverage.coverage_state || 'not_checked').replace(/_/g, ' ');
+  const counts = coverage.coverage_counts;
+  return counts ? `${state} (${counts.checked}/${counts.total} checks)` : state;
 }
 
 const days = parseInt(argValue('days', '7'), 10);

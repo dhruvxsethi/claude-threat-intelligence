@@ -6,6 +6,7 @@ import { getDb, migrate } from '../scripts/migrate.mjs';
 import { loadSettings, loadFeedsConfig } from '../ingestion/feed-fetcher.mjs';
 import cron from 'node-cron';
 import { spawn } from 'child_process';
+import { createHash } from 'crypto';
 
 // Load .env
 const __envRoot = dirname(fileURLToPath(import.meta.url));
@@ -41,7 +42,7 @@ function sourceGroupForName(name = '') {
   if (s.includes('bleeping') || s.includes('hacker news') || s.includes('securityweek') || s.includes('dark reading') || s.includes('cyberscoop')) {
     return { key: 'mainstream_news', label: 'Mainstream Security News' };
   }
-  if (s.includes('talos') || s.includes('mandiant') || s.includes('unit 42') || s.includes('microsoft') || s.includes('google') || s.includes('crowdstrike') || s.includes('kaspersky') || s.includes('checkpoint') || s.includes('proofpoint') || s.includes('sentinelone') || s.includes('recorded future') || s.includes('rapid7') || s.includes('red canary') || s.includes('elastic') || s.includes('huntress') || s.includes('greynoise')) {
+  if (s.includes('talos') || s.includes('mandiant') || s.includes('unit 42') || s.includes('microsoft') || s.includes('google') || s.includes('crowdstrike') || s.includes('kaspersky') || s.includes('checkpoint') || s.includes('proofpoint') || s.includes('sentinelone') || s.includes('recorded future') || s.includes('rapid7') || s.includes('red canary') || s.includes('elastic') || s.includes('huntress') || s.includes('greynoise') || s.includes('fortinet') || s.includes('trend micro') || s.includes('zscaler') || s.includes('eset') || s.includes('sekoia') || s.includes('reversinglabs')) {
     return { key: 'vendor_intel', label: 'Major Vendor Intel' };
   }
   if (s.includes('cert-eu') || s.includes('cert eu') || s.includes('ncsc')) {
@@ -55,6 +56,10 @@ function sourceGroupForName(name = '') {
 
 function isCommoditySource(name) {
   return sourceGroupForName(name).key === 'commodity';
+}
+
+function stableFeedId(prefix, value) {
+  return `${prefix}_${createHash('sha1').update(String(value || '')).digest('hex').slice(0, 12)}`;
 }
 
 function ensureDb() {
@@ -275,6 +280,16 @@ app.get('/api/stats', (req, res) => {
 
   const total = db.prepare('SELECT COUNT(*) as cnt FROM threats WHERE ingested_at >= ?').get(cutoff).cnt;
   const today_count = db.prepare('SELECT COUNT(*) as cnt FROM threats WHERE ingested_at >= ?').get(today).cnt;
+  const article_count = db.prepare(`
+    SELECT COUNT(*) AS cnt FROM threats
+    WHERE ingested_at >= ?
+      AND COALESCE(source_name, '') NOT IN (
+        'NIST NVD',
+        'GitHub Security Advisories',
+        'CISA Known Exploited Vulnerabilities'
+      )
+  `).get(cutoff).cnt;
+  const commodity_count = Math.max(0, total - article_count);
 
   const by_severity = db.prepare(`
     SELECT severity, COUNT(*) as cnt FROM threats WHERE ingested_at >= ? GROUP BY severity
@@ -362,7 +377,7 @@ app.get('/api/stats', (req, res) => {
   const feeds_active = db.prepare('SELECT COUNT(*) as cnt FROM feed_health WHERE is_healthy = 1').get().cnt;
 
   res.json({
-    summary: { total, today_count, cve_count, ioc_count, kev_count, feeds_active },
+    summary: { total, today_count, cve_count, ioc_count, kev_count, feeds_active, article_count, commodity_count },
     by_severity,
     by_type,
     by_source,
@@ -603,7 +618,27 @@ app.get('/api/feeds', (req, res) => {
     }));
   } catch {}
 
-  const fullHealth = [...annotated, ...feedsConfig];
+  const promotedDiscoveredFeeds = discoveredSources
+    .filter(s => s.status === 'added')
+    .map(s => {
+      let meta = {};
+      try { meta = JSON.parse(s.metadata || '{}'); } catch {}
+      return {
+        feed_id: stableFeedId('auto', s.url),
+        feed_name: s.title || s.url,
+        is_healthy: null,
+        total_threats_contributed: 0,
+        consecutive_failures: 0,
+        last_success: null,
+        never_run: true,
+        auto_discovered: true,
+        tier: meta.source_tier || (s.confidence >= 85 ? 2 : 3),
+      };
+    })
+    .filter(f => !seenIds.has(f.feed_id))
+    .map(addMetrics);
+
+  const fullHealth = [...annotated, ...feedsConfig, ...promotedDiscoveredFeeds];
   const feedQuality = fullHealth
     .filter(f => f.enabled !== false)
     .sort((a, b) => (b.quality_score || 0) - (a.quality_score || 0) || (b.computed_threats || 0) - (a.computed_threats || 0))
@@ -622,7 +657,18 @@ app.get('/api/feeds', (req, res) => {
     .sort((a, b) => a.quality_score - b.quality_score)
     .slice(0, 10);
 
-  res.json({ health: fullHealth, feedQuality, feedRecommendations, recentRuns, discoveredSources });
+  res.json({
+    health: fullHealth,
+    feedQuality,
+    feedRecommendations,
+    recentRuns,
+    discoveredSources,
+    sourceAutomation: {
+      autoPromoted: discoveredSources.filter(s => s.status === 'added').length,
+      autoRejected: discoveredSources.filter(s => s.status === 'rejected').length,
+      pendingReview: discoveredSources.filter(s => s.status === 'reviewed' || s.status === 'new').length,
+    },
+  });
 });
 
 // ─── Trigger pipeline run manually ────────────────────────────────────────
@@ -1068,20 +1114,31 @@ function coverageForThreat(db, threat) {
   const exactExternalMatches = sightings.filter(s => ['cve', 'ioc', 'url'].includes(s.match_type)).length;
   const exactLocalMatches = matchCount;
   const checkedProviders = [
-    'NVD',
-    'CISA KEV',
-    'GitHub Advisories',
-    'OTX',
-    'MalwareBazaar',
-    'URLHaus',
-    process.env.SHODAN_API_KEY ? 'Shodan' : null,
-    process.env.CENSYS_API_ID ? 'Censys' : null,
+    { key: 'nvd', label: 'NVD' },
+    { key: 'cisa_kev', label: 'CISA KEV' },
+    { key: 'github_advisory', label: 'GitHub Advisories' },
+    { key: 'otx', label: 'OTX' },
+    { key: 'malwarebazaar', label: 'MalwareBazaar' },
+    { key: 'urlhaus', label: 'URLHaus' },
+    process.env.SHODAN_API_KEY ? { key: 'shodan', label: 'Shodan' } : null,
+    process.env.CENSYS_API_ID ? { key: 'censys', label: 'Censys' } : null,
   ].filter(Boolean);
   const checkedSources = checkedProviders.map(provider => {
-    const key = provider.toLowerCase().replace(/\s+/g, '_').replace('advisories', 'advisory');
-    const row = checkedMap.get(key) || checkedMap.get(provider) || checkedMap.get(provider.toLowerCase());
-    return row || { provider, status: 'not_checked', checked_at: null };
+    const row = checkedMap.get(provider.key) || checkedMap.get(provider.label) || checkedMap.get(provider.label.toLowerCase());
+    return row ? { ...row, provider: provider.label, provider_key: provider.key } : {
+      provider: provider.label,
+      provider_key: provider.key,
+      status: 'not_checked',
+      checked_at: null,
+    };
   });
+  const completedChecks = checkedSources.filter(s => ['found', 'not_found'].includes(s.status));
+  const missedChecks = checkedSources.filter(s => s.status === 'not_checked');
+  const coverageState = completedChecks.length >= Math.min(4, checkedSources.length)
+    ? 'fully_checked'
+    : completedChecks.length > 0
+      ? 'partially_checked'
+      : 'not_checked';
   let confidenceScore = 35;
   const confidenceReasons = [];
   if (materialCount > 0) {
@@ -1100,7 +1157,16 @@ function coverageForThreat(db, threat) {
     confidenceScore += 15;
     confidenceReasons.push('no exact match in monitored comparison set');
   }
-  if (checkedProviders.length >= 5) confidenceScore += 5;
+  if (coverageState === 'fully_checked') {
+    confidenceScore += 8;
+    confidenceReasons.push('broad common-source checks completed');
+  } else if (coverageState === 'partially_checked') {
+    confidenceScore += 3;
+    confidenceReasons.push('partial common-source checks completed');
+  } else {
+    confidenceScore -= 15;
+    confidenceReasons.push('common-source checks not completed yet');
+  }
   confidenceScore = Math.max(0, Math.min(100, confidenceScore));
   const confidenceLevel = confidenceScore >= 80 ? 'high' : confidenceScore >= 55 ? 'medium' : 'low';
 
@@ -1120,9 +1186,15 @@ function coverageForThreat(db, threat) {
       level: confidenceLevel,
       score: confidenceScore,
       reasons: confidenceReasons,
-      checked_providers: checkedProviders,
+      checked_providers: checkedProviders.map(p => p.label),
     },
     checked_sources: checkedSources,
+    coverage_state: coverageState,
+    coverage_counts: {
+      checked: completedChecks.length,
+      total: checkedSources.length,
+      missing: missedChecks.length,
+    },
   };
 }
 
@@ -1186,6 +1258,9 @@ function getCoverageGapData(db, days = 7, limit = 100) {
       external_provider_count: Object.keys(providers).length,
       high_confidence_unique: unique.filter(t => (t.coverage.confidence?.score || 0) >= 70).length,
       checked_unique: unique.filter(t => (t.coverage.checked_sources || []).some(s => s.status && s.status !== 'not_checked')).length,
+      fully_checked_unique: unique.filter(t => t.coverage.coverage_state === 'fully_checked').length,
+      partially_checked_unique: unique.filter(t => t.coverage.coverage_state === 'partially_checked').length,
+      unchecked_unique: unique.filter(t => t.coverage.coverage_state === 'not_checked').length,
     },
     providers: Object.entries(providers)
       .map(([provider, count]) => ({ provider, count }))
@@ -1229,6 +1304,7 @@ function buildDemoReport(data, days = 7) {
       lines.push(`- Source URL: ${t.source_url || 'n/a'}`);
       lines.push(`- First seen by Radar: ${t.first_seen_by_us_at || t.ingested_at}`);
       lines.push(`- Coverage confidence: ${t.coverage.confidence?.level || 'unknown'} (${t.coverage.confidence?.score ?? 'n/a'})`);
+      lines.push(`- Coverage completeness: ${formatCoverageState(t.coverage)}`);
       lines.push(`- Checked sources: ${formatCheckedSources(t.coverage.checked_sources || [])}`);
       lines.push(`- CVEs: ${t.cve_count || 0}; IOCs: ${t.ioc_count || 0}; actors: ${t.actor_count || 0}`);
       lines.push(`- Why it matters: ${(t.summary || '').replace(/\s+/g, ' ').slice(0, 320) || 'Source article contained extractable threat intelligence.'}`);
@@ -1256,6 +1332,13 @@ function buildDemoReport(data, days = 7) {
 
 function latestCheckedAt(checks) {
   return checks.map(c => c.checked_at).filter(Boolean).sort().pop();
+}
+
+function formatCoverageState(coverage = {}) {
+  const state = String(coverage.coverage_state || 'not_checked').replace(/_/g, ' ');
+  const counts = coverage.coverage_counts;
+  if (!counts) return state;
+  return `${state} (${counts.checked}/${counts.total} sources checked)`;
 }
 
 function formatCheckedSources(checks) {

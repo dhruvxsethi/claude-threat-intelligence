@@ -314,6 +314,9 @@ a:hover { color: #79beff; }
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   padding: 18px 20px;
+  min-height: 252px;
+  display: flex;
+  flex-direction: column;
 }
 
 .intel-head {
@@ -328,14 +331,18 @@ a:hover { color: #79beff; }
 .intel-rows {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 126px;
   margin-bottom: 14px;
 }
 
 .intel-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) 72px;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
+  min-height: 24px;
 }
 
 .sev-dot {
@@ -353,13 +360,16 @@ a:hover { color: #79beff; }
 .intel-label {
   font-size: 0.72rem;
   color: var(--text-2);
-  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .intel-val {
   font-size: 0.92rem;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .intel-val.c-critical { color: var(--critical); }
@@ -371,32 +381,43 @@ a:hover { color: #79beff; }
 .intel-divider {
   border: none;
   border-top: 1px solid var(--border);
+  margin-top: auto !important;
   margin-bottom: 12px;
 }
 
 .intel-total {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
+  min-height: 52px;
+  gap: 14px;
 }
 
 .intel-big {
   font-size: 1.4rem;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   color: var(--text);
+  min-width: 86px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .intel-sub-rows {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 126px;
+  margin-bottom: 14px;
 }
 
 .intel-sub-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 72px;
   align-items: center;
   gap: 10px;
+  min-height: 24px;
 }
 
 .intel-sub-icon {

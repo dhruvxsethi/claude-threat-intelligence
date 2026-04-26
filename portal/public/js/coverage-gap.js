@@ -48,6 +48,7 @@ function renderGapRows(threats) {
     const confidence = coverage.confidence?.level
       ? `${coverage.confidence.level} confidence (${coverage.confidence.score})`
       : 'confidence not scored';
+    const completeness = formatCoverageState(coverage);
     const status = coverage.status === 'unique_candidate'
       ? '<span class="coverage-chip unique">not seen elsewhere</span>'
       : '<span class="coverage-chip seen">seen elsewhere</span>';
@@ -76,6 +77,7 @@ function renderGapRows(threats) {
         <span>${t.ioc_count || 0} IOCs</span>
         <span>${t.actor_count || 0} actors</span>
         <span>${esc(confidence)}</span>
+        <span>${esc(completeness)}</span>
         <span>${seen.length ? `Seen in ${seen.map(esc).join(', ')}` : 'No monitored/common match'}</span>
       </div>
       <div class="gap-checks">${checks}</div>
@@ -103,6 +105,12 @@ function buildTimeline(t) {
 
 function latestCheck(checks) {
   return checks.map(c => c.checked_at).filter(Boolean).sort().pop();
+}
+
+function formatCoverageState(coverage) {
+  const state = String(coverage?.coverage_state || 'not_checked').replace(/_/g, ' ');
+  const counts = coverage?.coverage_counts;
+  return counts ? `${state} · ${counts.checked}/${counts.total} checks` : state;
 }
 
 async function syncExternal() {
