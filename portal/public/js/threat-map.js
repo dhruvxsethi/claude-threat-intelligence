@@ -1,5 +1,5 @@
 let _mapDays = 1;
-let _mapData = { events: [], daily: [], routes: [], targets: [] };
+let _mapData = { events: [], daily: [], routes: [], targets: [], observationLinks: [] };
 let _mapFrame = 0;
 let _selectedCountry = '';
 let _targetHitZones = [];
@@ -47,6 +47,7 @@ async function loadThreatMap() {
   _mapData = await fetch(`/api/threat-map?days=${_mapDays}`).then(r => r.json());
   _mapData.routes = buildRoutes(_mapData.events || []);
   _mapData.targets = buildTargets(_mapData.events || []);
+  _mapData.observationLinks = buildObservationLinks(_mapData.targets || []);
 
   setText('tm-count', _mapData.summary?.events ?? 0);
   renderCountryRank(_mapData.top_countries || []);
@@ -98,6 +99,47 @@ function buildTargets(events) {
   return [...targets.values()].sort((a, b) => b.count - a.count || String(b.latest).localeCompare(String(a.latest))).slice(0, 18);
 }
 
+function buildObservationLinks(targets) {
+  const byCountry = new Map();
+  for (const target of targets) {
+    const row = byCountry.get(target.target_country) || {
+      country: target.target_country,
+      target: target.target,
+      count: 0,
+      kind: target.kind,
+    };
+    row.count += target.count;
+    if (target.count > (row.primary_count || 0)) {
+      row.kind = target.kind;
+      row.primary_count = target.count;
+    }
+    byCountry.set(target.target_country, row);
+  }
+  const countries = [...byCountry.values()].sort((a, b) => b.count - a.count).slice(0, 6);
+  const links = [];
+  for (let i = 0; i < countries.length - 1; i++) {
+    links.push({
+      source: countries[i].target,
+      target: countries[i + 1].target,
+      source_country: countries[i].country,
+      target_country: countries[i + 1].country,
+      kind: countries[i].kind,
+      count: Math.min(countries[i].count, countries[i + 1].count),
+    });
+  }
+  if (countries.length > 2) {
+    links.push({
+      source: countries[countries.length - 1].target,
+      target: countries[0].target,
+      source_country: countries[countries.length - 1].country,
+      target_country: countries[0].country,
+      kind: countries[0].kind,
+      count: Math.min(countries[0].count, countries[countries.length - 1].count),
+    });
+  }
+  return links;
+}
+
 function renderRank(id, rows, key) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -131,19 +173,30 @@ function renderCountryRank(rows) {
 function renderQuality(summary) {
   const el = document.getElementById('tm-quality');
   if (!el) return;
-  const total = Math.max(1, summary.events || 0);
+  const considered = summary.inspected ?? summary.total_threats ?? summary.events ?? 0;
+  const mapped = summary.events ?? 0;
+  const unmapped = summary.unmapped ?? Math.max(0, considered - mapped);
+  const total = Math.max(1, considered);
   const rows = [
+    ['Threats considered', considered],
+    ['Mapped observations', mapped],
+    ['Not mapped', unmapped],
     ['Actor-origin routes', summary.routed || 0],
-    ['Target pulses', summary.targeted || 0],
-    ['Article sourced', summary.article_sourced || 0],
   ];
-  el.innerHTML = rows.map(([label, count]) => {
+  const metrics = rows.map(([label, count]) => {
     const pct = Math.round((count / total) * 100);
     return `<div class="tm-quality-row">
       <span>${label}</span><b>${count}</b>
       <div class="tm-quality-bar"><span class="tm-quality-fill" style="--w:${pct}%"></span></div>
     </div>`;
   }).join('');
+  const reasons = (summary.unmapped_reasons || []).length
+    ? `<div class="tm-quality-reasons">
+        <div class="tm-quality-reason-title">Why some threats are not on the map</div>
+        ${summary.unmapped_reasons.map(r => `<div class="tm-quality-reason"><span>${esc(r.reason)}</span><b>${r.count}</b></div>`).join('')}
+      </div>`
+    : '';
+  el.innerHTML = metrics + reasons;
 }
 
 function renderFeed(events) {
@@ -205,8 +258,9 @@ function drawMap() {
 
   drawGrid(ctx, w, h);
   drawContinents(ctx, w, h);
-  drawTargets(ctx, w, h, _mapData.targets || []);
+  drawObservationLinks(ctx, w, h, _mapData.observationLinks || []);
   drawRoutes(ctx, w, h, _mapData.routes || []);
+  drawTargets(ctx, w, h, _mapData.targets || []);
   drawTargetLabels(ctx, _targetHitZones);
   _mapFrame += 1;
   requestAnimationFrame(drawMap);
@@ -303,6 +357,43 @@ function drawRoutes(ctx, w, h, routes) {
     const phase = ((_mapFrame / 220) + i * 0.19) % 1;
     drawRoute(ctx, a, b, color, width, i < 4 ? phase : null);
   });
+}
+
+function drawObservationLinks(ctx, w, h, links) {
+  if (!links.length) return;
+  const max = Math.max(1, ...links.map(link => link.count));
+  links.forEach((link, i) => {
+    const a = project(link.source.lat, link.source.lon, w, h);
+    const b = project(link.target.lat, link.target.lon, w, h);
+    const color = MAP_COLORS[link.kind] || MAP_COLORS.Intrusion;
+    const width = 0.9 + (link.count / max) * 1.5;
+    const phase = ((_mapFrame / 260) + i * 0.23) % 1;
+    drawObservationArc(ctx, a, b, color, width, phase);
+  });
+}
+
+function drawObservationArc(ctx, a, b, color, width, phase) {
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2 - Math.min(95, Math.abs(a.x - b.x) * 0.12 + 22);
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.24;
+  ctx.lineWidth = width;
+  ctx.setLineDash([5, 7]);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.quadraticCurveTo(mx, my, b.x, b.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const x = (1 - phase) * (1 - phase) * a.x + 2 * (1 - phase) * phase * mx + phase * phase * b.x;
+  const y = (1 - phase) * (1 - phase) * a.y + 2 * (1 - phase) * phase * my + phase * phase * b.y;
+  ctx.globalAlpha = 0.78;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, 2.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawRoute(ctx, a, b, color, width, phase) {

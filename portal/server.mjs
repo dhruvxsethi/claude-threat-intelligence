@@ -461,6 +461,7 @@ app.get('/api/threat-map', (req, res) => {
   const db = ensureDb();
   const { days = 1 } = req.query;
   const cutoff = new Date(Date.now() - parseInt(days) * 86400000).toISOString();
+  const totalThreats = db.prepare(`SELECT COUNT(*) AS count FROM threats WHERE ingested_at >= ?`).get(cutoff).count;
   const rows = db.prepare(`
     SELECT t.*,
       (SELECT COUNT(*) FROM threat_cves WHERE threat_id = t.id) AS cve_count,
@@ -469,10 +470,12 @@ app.get('/api/threat-map', (req, res) => {
     FROM threats t
     WHERE t.ingested_at >= ?
     ORDER BY datetime(t.ingested_at) DESC
-    LIMIT 160
+    LIMIT 1000
   `).all(cutoff).map(parseThreat);
 
-  const events = rows.map(threatMapEvent).filter(e => e.target_country);
+  const mapCandidates = rows.map(threatMapEvent);
+  const events = mapCandidates.filter(e => e.target_country);
+  const unmappedReasons = summarizeMapExclusions(rows, mapCandidates);
   const countBy = key => {
     const map = new Map();
     for (const event of events) {
@@ -491,7 +494,11 @@ app.get('/api/threat-map', (req, res) => {
     generated_at: new Date().toISOString(),
     days: parseInt(days),
     summary: {
+      total_threats: totalThreats,
+      inspected: rows.length,
       events: events.length,
+      unmapped: Math.max(0, rows.length - events.length),
+      unmapped_reasons: unmappedReasons,
       critical: rows.filter(t => t.severity === 'critical').length,
       high: rows.filter(t => t.severity === 'high').length,
       article_sourced: rows.filter(t => !isCommoditySource(t.source_name)).length,
@@ -1499,6 +1506,29 @@ function threatMapEvent(threat) {
     actor_count: threat.actor_count || 0,
     article_sourced: !isCommoditySource(threat.source_name),
   };
+}
+
+function summarizeMapExclusions(threats, mapCandidates) {
+  const reasons = new Map();
+  threats.forEach((threat, idx) => {
+    const candidate = mapCandidates[idx];
+    if (candidate?.target_country) return;
+    const reason = mapExclusionReason(threat, candidate);
+    reasons.set(reason, (reasons.get(reason) || 0) + 1);
+  });
+  return [...reasons.entries()]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 4);
+}
+
+function mapExclusionReason(threat, candidate = {}) {
+  if (isCommoditySource(threat.source_name)) {
+    if ((threat.cve_count || 0) > 0) return 'Commodity CVE record without geography';
+    return 'Commodity source without geography';
+  }
+  if (candidate.location_basis === 'unmapped') return 'No country, actor origin, or sector signal';
+  return 'Insufficient location evidence';
 }
 
 const NAMED_ACTOR_PATTERNS = [
