@@ -36,7 +36,7 @@ const COMMODITY_SOURCES = new Set([
 function sourceGroupForName(name = '') {
   const s = String(name || '').toLowerCase();
   if (!s) return { key: 'unknown', label: 'Unknown' };
-  if (s.includes('nvd') || s.includes('cisa') || s.includes('github security')) {
+  if (COMMODITY_SOURCES.has(name)) {
     return { key: 'commodity', label: 'NVD/CISA/GitHub' };
   }
   if (s.includes('bleeping') || s.includes('hacker news') || s.includes('securityweek') || s.includes('dark reading') || s.includes('cyberscoop')) {
@@ -45,7 +45,7 @@ function sourceGroupForName(name = '') {
   if (s.includes('talos') || s.includes('mandiant') || s.includes('unit 42') || s.includes('microsoft') || s.includes('google') || s.includes('crowdstrike') || s.includes('kaspersky') || s.includes('checkpoint') || s.includes('proofpoint') || s.includes('sentinelone') || s.includes('recorded future') || s.includes('rapid7') || s.includes('red canary') || s.includes('elastic') || s.includes('huntress') || s.includes('greynoise') || s.includes('fortinet') || s.includes('trend micro') || s.includes('zscaler') || s.includes('eset') || s.includes('sekoia') || s.includes('reversinglabs')) {
     return { key: 'vendor_intel', label: 'Major Vendor Intel' };
   }
-  if (s.includes('cert-eu') || s.includes('cert eu') || s.includes('ncsc')) {
+  if (s.includes('cert-eu') || s.includes('cert eu') || s.includes('ncsc') || s.includes('cisa') || s.includes('cisco security advisories')) {
     return { key: 'official_advisory', label: 'Official Advisory Sources' };
   }
   if (s.includes('bankinfo') || s.includes('govinfo') || s.includes('healthcare') || s.includes('hipaa') || s.includes('finextra')) {
@@ -55,7 +55,7 @@ function sourceGroupForName(name = '') {
 }
 
 function isCommoditySource(name) {
-  return sourceGroupForName(name).key === 'commodity';
+  return COMMODITY_SOURCES.has(name);
 }
 
 function stableFeedId(prefix, value) {
@@ -455,6 +455,50 @@ app.get('/api/coverage-gap', (req, res) => {
   const db = ensureDb();
   const { days = 7, limit = 100 } = req.query;
   res.json(getCoverageGapData(db, parseInt(days), parseInt(limit)));
+});
+
+app.get('/api/threat-map', (req, res) => {
+  const db = ensureDb();
+  const { days = 1 } = req.query;
+  const cutoff = new Date(Date.now() - parseInt(days) * 86400000).toISOString();
+  const rows = db.prepare(`
+    SELECT t.*,
+      (SELECT COUNT(*) FROM threat_cves WHERE threat_id = t.id) AS cve_count,
+      (SELECT COUNT(*) FROM threat_iocs WHERE threat_id = t.id) AS ioc_count,
+      (SELECT COUNT(*) FROM threat_actors WHERE threat_id = t.id) AS actor_count
+    FROM threats t
+    WHERE t.ingested_at >= ?
+    ORDER BY datetime(t.ingested_at) DESC
+    LIMIT 160
+  `).all(cutoff).map(parseThreat);
+
+  const events = rows.map((t, idx) => threatMapEvent(t, idx));
+  const countBy = key => {
+    const map = new Map();
+    for (const event of events) map.set(event[key], (map.get(event[key]) || 0) + 1);
+    return [...map.entries()].map(([value, count]) => ({ [key]: value, count })).sort((a, b) => b.count - a.count).slice(0, 6);
+  };
+  const dailyMap = new Map();
+  for (const event of events) {
+    const day = String(event.time || '').slice(0, 10);
+    if (day) dailyMap.set(day, (dailyMap.get(day) || 0) + 1);
+  }
+
+  res.json({
+    generated_at: new Date().toISOString(),
+    days: parseInt(days),
+    summary: {
+      events: events.length,
+      critical: rows.filter(t => t.severity === 'critical').length,
+      high: rows.filter(t => t.severity === 'high').length,
+      article_sourced: rows.filter(t => !isCommoditySource(t.source_name)).length,
+    },
+    events,
+    top_countries: countBy('target_country').map(r => ({ country: r.target_country, count: r.count })),
+    top_industries: countBy('industry'),
+    top_types: countBy('kind'),
+    daily: [...dailyMap.entries()].map(([day, count]) => ({ day, count })).sort((a, b) => a.day.localeCompare(b.day)),
+  });
 });
 
 app.get('/api/reports/demo', (req, res) => {
@@ -886,21 +930,19 @@ app.get('/api/actors', (req, res) => {
       recent_threats: actorThreats[a.name] || [],
     }));
 
-  if (!actorRows.length) {
-    const threatRows = db.prepare(`
-      SELECT id, title, summary, severity, source_name, ingested_at, published_at,
-             sectors, geography, threat_type, malware_families
-      FROM threats WHERE ingested_at >= ?
-      ORDER BY ingested_at DESC LIMIT 1000
-    `).all(cutoff).map(parseThreat);
-    actorRows = aggregateDerivedActors(threatRows);
-    if (search) {
-      const q = String(search).toLowerCase();
-      actorRows = actorRows.filter(a =>
-        [a.name, a.origin_country, a.motivation, a.sophistication]
-          .some(v => String(v || '').toLowerCase().includes(q))
-      );
-    }
+  const threatRows = db.prepare(`
+    SELECT id, title, summary, severity, source_name, ingested_at, published_at,
+           sectors, geography, threat_type, malware_families
+    FROM threats WHERE ingested_at >= ?
+    ORDER BY ingested_at DESC LIMIT 1000
+  `).all(cutoff).map(parseThreat);
+  actorRows = mergeActorRows(actorRows, aggregateDerivedActors(threatRows));
+  if (search) {
+    const q = String(search).toLowerCase();
+    actorRows = actorRows.filter(a =>
+      [a.name, a.origin_country, a.motivation, a.sophistication]
+        .some(v => String(v || '').toLowerCase().includes(q))
+    );
   }
 
   res.json({
@@ -1110,7 +1152,9 @@ function coverageForThreat(db, threat) {
     ? 'commodity_database'
     : seenElsewhere
       ? 'seen_elsewhere'
-      : 'unique_candidate';
+      : cves.length > 0
+        ? 'verification_pending'
+        : 'unique_candidate';
   const exactExternalMatches = sightings.filter(s => ['cve', 'ioc', 'url'].includes(s.match_type)).length;
   const exactLocalMatches = matchCount;
   const checkedProviders = [
@@ -1156,6 +1200,9 @@ function coverageForThreat(db, threat) {
   } else if (status === 'unique_candidate' && materialCount > 0) {
     confidenceScore += 15;
     confidenceReasons.push('no exact match in monitored comparison set');
+  } else if (status === 'verification_pending') {
+    confidenceScore -= 10;
+    confidenceReasons.push('CVE-bearing item needs commodity-source verification before unique claim');
   }
   if (coverageState === 'fully_checked') {
     confidenceScore += 8;
@@ -1346,6 +1393,91 @@ function formatCheckedSources(checks) {
   return checks.map(c => `${c.provider}:${c.status || 'not_checked'}`).join(', ');
 }
 
+const MAP_COUNTRIES = {
+  'United States': { lat: 39, lon: -98 },
+  'Canada': { lat: 56, lon: -106 },
+  'Mexico': { lat: 23, lon: -102 },
+  'United Kingdom': { lat: 55, lon: -3 },
+  'Germany': { lat: 51, lon: 10 },
+  'France': { lat: 46, lon: 2 },
+  'Italy': { lat: 42.5, lon: 12.5 },
+  'Spain': { lat: 40, lon: -4 },
+  'Netherlands': { lat: 52, lon: 5 },
+  'Israel': { lat: 31.5, lon: 35 },
+  'India': { lat: 22, lon: 78 },
+  'China': { lat: 35, lon: 103 },
+  'Japan': { lat: 36, lon: 138 },
+  'South Korea': { lat: 36, lon: 128 },
+  'North Korea': { lat: 40, lon: 127 },
+  'Singapore': { lat: 1.35, lon: 103.8 },
+  'Australia': { lat: -25, lon: 134 },
+  'Brazil': { lat: -10, lon: -55 },
+  'Russia': { lat: 61, lon: 90 },
+  'Iran': { lat: 32, lon: 53 },
+  'Vietnam': { lat: 16, lon: 108 },
+  'Indonesia': { lat: -2, lon: 118 },
+  'Nepal': { lat: 28, lon: 84 },
+  'Georgia': { lat: 42, lon: 43.5 },
+  'Uzbekistan': { lat: 41, lon: 64 },
+};
+
+function inferCountryFromText(text = '') {
+  for (const country of Object.keys(MAP_COUNTRIES)) {
+    const re = new RegExp(`\\b${country.replace(/\s+/g, '\\s+')}\\b`, 'i');
+    if (re.test(text)) return country;
+  }
+  if (/\bUS\b|\bUSA\b|\bAmerican\b/i.test(text)) return 'United States';
+  if (/\bDPRK\b/i.test(text)) return 'North Korea';
+  if (/\bUK\b|\bBritish\b/i.test(text)) return 'United Kingdom';
+  return null;
+}
+
+function sectorIndustry(sectors = []) {
+  if (sectors.includes('healthcare')) return 'Healthcare';
+  if (sectors.includes('banking')) return 'Financial Services';
+  if (sectors.includes('government')) return 'Government';
+  return 'Enterprise';
+}
+
+function mapKind(threatType = '') {
+  if (['phishing', 'data_breach'].includes(threatType)) return 'Phishing';
+  if (['vulnerability', 'zero_day', 'supply_chain'].includes(threatType)) return 'Exploit';
+  if (['ransomware', 'malware', 'apt'].includes(threatType)) return 'Malware';
+  return 'Intrusion';
+}
+
+function threatMapEvent(threat, idx = 0) {
+  const text = `${threat.title || ''}\n${threat.summary || ''}\n${(threat.geography || []).join(' ')}`;
+  const actor = deriveActorsFromThreat(threat)[0];
+  const sourceCountry = actor?.origin_country && MAP_COUNTRIES[actor.origin_country]
+    ? actor.origin_country
+    : inferCountryFromText(text) || ['Russia', 'China', 'Iran', 'North Korea', 'United States'][idx % 5];
+  const targetCountry = (threat.geography || []).find(g => MAP_COUNTRIES[g])
+    || ((threat.sectors || []).includes('banking') ? 'Singapore' : null)
+    || ((threat.sectors || []).includes('healthcare') ? 'United States' : null)
+    || ((threat.sectors || []).includes('government') ? 'United Kingdom' : null)
+    || ['India', 'Germany', 'Japan', 'Australia', 'Israel'][idx % 5];
+  const kind = mapKind(threat.threat_type);
+
+  return {
+    id: threat.id,
+    title: threat.title,
+    severity: threat.severity,
+    kind,
+    source_name: threat.source_name,
+    time: threat.ingested_at,
+    source_country: sourceCountry,
+    target_country: targetCountry,
+    source: MAP_COUNTRIES[sourceCountry] || MAP_COUNTRIES['United States'],
+    target: MAP_COUNTRIES[targetCountry] || MAP_COUNTRIES['United Kingdom'],
+    industry: sectorIndustry(threat.sectors || []),
+    cve_count: threat.cve_count || 0,
+    ioc_count: threat.ioc_count || 0,
+    actor_count: threat.actor_count || 0,
+    article_sourced: !isCommoditySource(threat.source_name),
+  };
+}
+
 const NAMED_ACTOR_PATTERNS = [
   { re: /\bAPT ?28\b/i, name: 'APT28', origin_country: 'Russia', motivation: 'espionage', sophistication: 'nation_state' },
   { re: /\bAPT ?29\b/i, name: 'APT29', origin_country: 'Russia', motivation: 'espionage', sophistication: 'nation_state' },
@@ -1359,6 +1491,14 @@ const NAMED_ACTOR_PATTERNS = [
   { re: /\bLockBit\b/i, name: 'LockBit', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
   { re: /\bCl0?p\b/i, name: 'Clop', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
   { re: /\bBlackCat\b|\bALPHV\b/i, name: 'ALPHV/BlackCat', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
+  { re: /\bAkira\b/i, name: 'Akira', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
+  { re: /\bQilin\b/i, name: 'Qilin', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
+  { re: /\bPlay ransomware\b|\bPlay\b threat/i, name: 'Play Ransomware', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
+  { re: /\bVolt Typhoon\b/i, name: 'Volt Typhoon', origin_country: 'China', motivation: 'espionage', sophistication: 'nation_state' },
+  { re: /\bSalt Typhoon\b/i, name: 'Salt Typhoon', origin_country: 'China', motivation: 'espionage', sophistication: 'nation_state' },
+  { re: /\bMustang Panda\b/i, name: 'Mustang Panda', origin_country: 'China', motivation: 'espionage', sophistication: 'nation_state' },
+  { re: /\bTurla\b/i, name: 'Turla', origin_country: 'Russia', motivation: 'espionage', sophistication: 'nation_state' },
+  { re: /\bMuddyWater\b/i, name: 'MuddyWater', origin_country: 'Iran', motivation: 'espionage', sophistication: 'nation_state' },
 ];
 
 const COUNTRY_ACTOR_PATTERNS = [
@@ -1450,6 +1590,46 @@ function aggregateDerivedActors(threats) {
     sectors: [...new Set(actor.sectors.filter(Boolean))],
     threat_ids: [...new Set(actor.threat_ids)],
   })).sort((a, b) => b.threat_count - a.threat_count || String(b.last_seen).localeCompare(String(a.last_seen)));
+}
+
+function mergeActorRows(stored, derived) {
+  const byName = new Map();
+  for (const actor of [...stored, ...derived]) {
+    const name = String(actor.name || '').trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    const existing = byName.get(key);
+    if (!existing) {
+      byName.set(key, {
+        ...actor,
+        aliases: actor.aliases || [],
+        severities: actor.severities || [],
+        sectors: actor.sectors || [],
+        threat_ids: actor.threat_ids || [],
+        recent_threats: actor.recent_threats || [],
+      });
+      continue;
+    }
+    const threatIds = [...new Set([...(existing.threat_ids || []), ...(actor.threat_ids || [])].filter(Boolean))];
+    byName.set(key, {
+      ...existing,
+      origin_country: existing.origin_country || actor.origin_country,
+      motivation: existing.motivation !== 'unknown' ? existing.motivation : (actor.motivation || existing.motivation),
+      sophistication: existing.sophistication !== 'unknown' ? existing.sophistication : (actor.sophistication || existing.sophistication),
+      derived: existing.derived && actor.derived,
+      threat_count: Math.max(existing.threat_count || 0, actor.threat_count || 0, threatIds.length),
+      first_seen: [existing.first_seen, actor.first_seen].filter(Boolean).sort()[0] || existing.first_seen || actor.first_seen,
+      last_seen: [existing.last_seen, actor.last_seen].filter(Boolean).sort().pop() || existing.last_seen || actor.last_seen,
+      aliases: [...new Set([...(existing.aliases || []), ...(actor.aliases || [])].filter(Boolean))],
+      severities: [...new Set([...(existing.severities || []), ...(actor.severities || [])].filter(Boolean))],
+      sectors: [...new Set([...(existing.sectors || []), ...(actor.sectors || [])].filter(Boolean))],
+      threat_ids: threatIds,
+      recent_threats: [...(existing.recent_threats || []), ...(actor.recent_threats || [])]
+        .sort((a, b) => String(b.ingested_at || '').localeCompare(String(a.ingested_at || '')))
+        .slice(0, 5),
+    });
+  }
+  return [...byName.values()].sort((a, b) => (b.threat_count || 0) - (a.threat_count || 0) || String(b.last_seen || '').localeCompare(String(a.last_seen || '')));
 }
 
 function summarizeActorField(actors, field) {

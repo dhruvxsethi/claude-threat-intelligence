@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radar — Threat Map</title>
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+
+<nav class="navbar">
+  <div class="navbar-brand">
+    <div class="brand-mark"></div>
+    <span class="brand-name">Radar</span>
+    <div class="live-indicator"><span class="live-dot"></span>Live</div>
+  </div>
+  <div class="navbar-links">
+    <a href="/" class="nav-link">Dashboard</a>
+    <a href="/threat-map.html" class="nav-link active">Threat Map</a>
+    <a href="/threats.html" class="nav-link">Threats</a>
+    <a href="/coverage-gap.html" class="nav-link">Coverage Gap</a>
+    <a href="/sectors.html" class="nav-link">Sectors</a>
+    <a href="/iocs.html" class="nav-link">IOCs</a>
+    <a href="/actors.html" class="nav-link">Actors</a>
+    <a href="/feeds.html" class="nav-link">Feeds</a>
+  </div>
+  <div class="navbar-actions">
+    <button class="btn-sync" onclick="triggerPipeline()">Sync Now</button>
+  </div>
+</nav>
+
+<main class="threat-map-page">
+  <section class="tm-stage">
+    <div class="tm-header">
+      <div>
+        <div class="tm-title">Live Threat Map</div>
+        <div class="tm-subtitle"><span id="tm-count">—</span> mapped observations in the selected window</div>
+      </div>
+      <div class="time-pills tm-window">
+        <button class="time-pill active" data-days="1" onclick="setMapDays(1,this)">24h</button>
+        <button class="time-pill" data-days="7" onclick="setMapDays(7,this)">7d</button>
+        <button class="time-pill" data-days="30" onclick="setMapDays(30,this)">30d</button>
+      </div>
+    </div>
+
+    <div class="tm-layout">
+      <aside class="tm-left">
+        <div class="tm-panel">
+          <div class="tm-panel-title">Recent Activity</div>
+          <canvas id="tm-spark" width="260" height="92"></canvas>
+        </div>
+        <div class="tm-panel tm-feed-panel">
+          <div class="tm-panel-title">Live Events</div>
+          <div id="tm-live-feed" class="tm-live-feed">Loading…</div>
+        </div>
+      </aside>
+
+      <div class="tm-map-wrap">
+        <canvas id="tm-map"></canvas>
+        <div class="tm-legend">
+          <span><i class="tm-dot malware"></i> Malware</span>
+          <span><i class="tm-dot phishing"></i> Phishing</span>
+          <span><i class="tm-dot exploit"></i> Exploit</span>
+          <span><i class="tm-dot intrusion"></i> Intrusion</span>
+        </div>
+      </div>
+
+      <aside class="tm-right">
+        <div class="tm-panel">
+          <div class="tm-panel-title">Top Targeted Countries</div>
+          <div id="tm-countries" class="tm-rank-list">Loading…</div>
+        </div>
+        <div class="tm-panel">
+          <div class="tm-panel-title">Top Targeted Industries</div>
+          <div id="tm-industries" class="tm-rank-list">Loading…</div>
+        </div>
+        <div class="tm-panel">
+          <div class="tm-panel-title">Top Threat Types</div>
+          <div id="tm-types" class="tm-rank-list">Loading…</div>
+        </div>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<div class="toast-wrap" id="toasts"></div>
+<script src="/js/common.js"></script>
+<script src="/js/threat-map.js"></script>
+</body>
+</html>

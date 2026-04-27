@@ -106,6 +106,16 @@ feeds:
     enabled: true
     source_credibility: 90
 
+  - id: cisco_security_advisories
+    name: "Cisco Security Advisories"
+    url: "https://sec.cloudapps.cisco.com/security/center/psirtrss20/CiscoSecurityAdvisory.xml"
+    type: rss
+    tier: 1
+    rotation_slot: A
+    sectors: [banking, government, healthcare]
+    enabled: true
+    source_credibility: 94
+
   - id: unit42_palo
     name: "Palo Alto Unit 42"
     url: "https://unit42.paloaltonetworks.com/feed/"
@@ -424,6 +434,6 @@ feeds:
 
 # Feed health tracking (auto-updated by pipeline)
 _metadata:
-  total_feeds: 40
+  total_feeds: 41
   last_feed_discovery: null
   next_feed_discovery: null

@@ -65,7 +65,13 @@ function coverageForThreat(db, threat) {
       ? 'partially_checked'
       : 'not_checked';
   return {
-    status: isCommoditySource(threat.source_name) ? 'commodity_database' : (seenSources.size || external.length ? 'seen_elsewhere' : 'unique_candidate'),
+    status: isCommoditySource(threat.source_name)
+      ? 'commodity_database'
+      : (seenSources.size || external.length)
+        ? 'seen_elsewhere'
+        : cves.length > 0
+          ? 'verification_pending'
+          : 'unique_candidate',
     seen_sources: [...seenSources],
     external_providers: external,
     match_material: { cves: cves.length, iocs: iocs.length },

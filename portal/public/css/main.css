@@ -859,6 +859,7 @@ a:hover { color: #79beff; }
 }
 .coverage-chip.unique { color: var(--low); border-color: rgba(74,201,126,0.28); background: rgba(74,201,126,0.1); }
 .coverage-chip.seen { color: var(--medium); border-color: rgba(232,164,74,0.28); background: rgba(232,164,74,0.1); }
+.coverage-chip.pending { color: var(--blue); border-color: rgba(79,142,247,0.28); background: rgba(79,142,247,0.1); }
 
 .threat-filter-panel .filter-group,
 .threat-filter-panel .time-pills,
@@ -2129,6 +2130,211 @@ a:hover { color: #79beff; }
 }
 .search-overlay.hidden { display: none; }
 
+/* ─── Live threat map ───────────────────────────────────────────────────── */
+.threat-map-page {
+  min-height: calc(100vh - var(--navbar-h));
+  padding: 22px 24px 24px;
+}
+
+.tm-stage {
+  min-height: calc(100vh - var(--navbar-h) - 46px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 50% 25%, rgba(255,47,109,0.12), transparent 32%),
+    linear-gradient(180deg, rgba(20,14,25,0.86), rgba(7,9,16,0.96));
+  overflow: hidden;
+  position: relative;
+}
+
+.tm-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,47,109,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,47,109,0.035) 1px, transparent 1px);
+  background-size: 80px 80px;
+  pointer-events: none;
+}
+
+.tm-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 26px 8px;
+}
+
+.tm-title {
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--text);
+  text-transform: uppercase;
+}
+
+.tm-subtitle {
+  margin-top: 6px;
+  font-size: 0.86rem;
+  color: #ff2f6d;
+  font-weight: 600;
+}
+
+.tm-layout {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr) 300px;
+  gap: 18px;
+  min-height: calc(100vh - var(--navbar-h) - 126px);
+  padding: 12px 24px 22px;
+}
+
+.tm-left,
+.tm-right {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.tm-map-wrap {
+  min-height: 590px;
+  position: relative;
+}
+
+#tm-map {
+  width: 100%;
+  height: 100%;
+  min-height: 590px;
+  display: block;
+}
+
+.tm-panel {
+  background: rgba(6,8,14,0.42);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+  padding: 14px 14px;
+}
+
+.tm-panel-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+}
+
+.tm-feed-panel {
+  flex: 1;
+  min-height: 360px;
+}
+
+.tm-live-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tm-event {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  color: var(--text-2);
+}
+
+.tm-event b {
+  display: block;
+  color: var(--text-2);
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tm-event small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-3);
+  font-size: 0.58rem;
+}
+
+.tm-event-beacon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 4px solid rgba(255,255,255,0.1);
+  background: #f5b331;
+  box-shadow: 0 0 18px rgba(245,179,49,0.35);
+}
+
+.tm-event-beacon.malware { background: #ff3045; box-shadow: 0 0 18px rgba(255,48,69,0.35); }
+.tm-event-beacon.phishing { background: #a855f7; box-shadow: 0 0 18px rgba(168,85,247,0.35); }
+.tm-event-beacon.exploit { background: #f5b331; box-shadow: 0 0 18px rgba(245,179,49,0.35); }
+.tm-event-beacon.intrusion { background: #4f8ef7; box-shadow: 0 0 18px rgba(79,142,247,0.35); }
+
+.tm-rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tm-rank-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.7rem;
+  color: var(--text-2);
+}
+
+.tm-rank-row b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.tm-legend {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 28px;
+  align-items: center;
+  padding: 9px 14px;
+  border-radius: 999px;
+  background: rgba(8,10,16,0.58);
+  border: 1px solid rgba(255,255,255,0.06);
+  color: var(--text-2);
+  font-size: 0.68rem;
+}
+
+.tm-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.tm-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.tm-dot.malware { background: #ff3045; box-shadow: 0 0 12px rgba(255,48,69,0.65); }
+.tm-dot.phishing { background: #a855f7; box-shadow: 0 0 12px rgba(168,85,247,0.65); }
+.tm-dot.exploit { background: #f5b331; box-shadow: 0 0 12px rgba(245,179,49,0.65); }
+.tm-dot.intrusion { background: #4f8ef7; box-shadow: 0 0 12px rgba(79,142,247,0.65); }
+
 /* ─── Empty states ───────────────────────────────────────────────────────── */
 .empty {
   display: flex;
@@ -2189,6 +2395,10 @@ a:hover { color: #79beff; }
   .d-side-card { position: static; }
   .d-statbar { grid-template-columns: repeat(2, 1fr); }
   .impact-grid  { grid-template-columns: 1fr; }
+  .tm-layout { grid-template-columns: 1fr; }
+  .tm-map-wrap, #tm-map { min-height: 460px; }
+  .tm-header { flex-direction: column; }
+  .tm-legend { position: static; transform: none; justify-content: center; flex-wrap: wrap; margin: 10px auto 0; width: fit-content; }
   .stats-grid   { grid-template-columns: repeat(2, 1fr); }
   .unique-grid  { grid-template-columns: repeat(2, 1fr); }
   .dashboard-unique-grid,

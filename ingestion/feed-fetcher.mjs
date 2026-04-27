@@ -186,6 +186,7 @@ export async function fetchGithubAdvisories({ hoursBack = 48, perPage = 100 } = 
         'Accept': 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
         'User-Agent': 'ClaudeThreatIntelligence/1.0',
+        ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
       },
       signal: AbortSignal.timeout(15000),
     });

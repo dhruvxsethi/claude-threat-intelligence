@@ -2,6 +2,19 @@ import { v4 as uuidv4 } from 'uuid';
 import { scoreCredibility, normalizeSeverity, adjustIocConfidence } from './credibility.mjs';
 import { deriveActorsFromText, mergeActors } from './actor-extractor.mjs';
 
+function scoreCveCredibility(cve = {}, sourceName = 'NIST NVD') {
+  let score = sourceName.includes('CISA') ? 88 : 68;
+  const cvss = Number(cve.cvss_score || 0);
+  if (cvss >= 9) score += 12;
+  else if (cvss >= 7) score += 9;
+  else if (cvss >= 4) score += 5;
+  else if (cvss > 0) score += 2;
+  if (cve.in_kev || cve.exploited_in_wild) score += 10;
+  if ((cve.affected_products || []).length) score += 4;
+  if ((cve.references || []).length) score += 3;
+  return Math.max(55, Math.min(98, score));
+}
+
 export function normalizeArticleThreat(analysisData, article, feedMeta) {
   const id = uuidv4();
   const sourceTier = feedMeta?.source_tier || 5;
@@ -82,7 +95,7 @@ export function normalizeCveThreat(analysisData, cve, sourceUrl) {
     severity,
     threat_type: 'vulnerability',
     kill_chain_stage: 'exploitation',
-    credibility_score: 85, // NVD/CISA are high credibility
+    credibility_score: scoreCveCredibility(cve),
     source_url: sourceUrl || `https://nvd.nist.gov/vuln/detail/${cve.cve_id}`,
     source_name: 'NIST NVD',
     source_tier: 1,
@@ -106,7 +119,7 @@ export function normalizeCveThreat(analysisData, cve, sourceUrl) {
     slot: 'A',
     first_seen_by_us_at: new Date().toISOString(),
     external_seen_at: null,
-    gap_status: 'not_seen_elsewhere',
+    gap_status: 'seen_elsewhere',
     gap_checked_at: null,
     _cves: [{
       threat_id: id,

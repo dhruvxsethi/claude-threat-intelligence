@@ -11,6 +11,14 @@ const NAMED_ACTOR_PATTERNS = [
   { re: /\bLockBit\b/i, name: 'LockBit', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
   { re: /\bCl0?p\b/i, name: 'Clop', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
   { re: /\bBlackCat\b|\bALPHV\b/i, name: 'ALPHV/BlackCat', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
+  { re: /\bAkira\b/i, name: 'Akira', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
+  { re: /\bQilin\b/i, name: 'Qilin', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
+  { re: /\bPlay ransomware\b|\bPlay\b threat/i, name: 'Play Ransomware', origin_country: null, motivation: 'financial', sophistication: 'advanced' },
+  { re: /\bVolt Typhoon\b/i, name: 'Volt Typhoon', origin_country: 'China', motivation: 'espionage', sophistication: 'nation_state' },
+  { re: /\bSalt Typhoon\b/i, name: 'Salt Typhoon', origin_country: 'China', motivation: 'espionage', sophistication: 'nation_state' },
+  { re: /\bMustang Panda\b/i, name: 'Mustang Panda', origin_country: 'China', motivation: 'espionage', sophistication: 'nation_state' },
+  { re: /\bTurla\b/i, name: 'Turla', origin_country: 'Russia', motivation: 'espionage', sophistication: 'nation_state' },
+  { re: /\bMuddyWater\b/i, name: 'MuddyWater', origin_country: 'Iran', motivation: 'espionage', sophistication: 'nation_state' },
 ];
 
 const COUNTRY_ACTOR_PATTERNS = [

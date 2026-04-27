@@ -51,7 +51,9 @@ function renderGapRows(threats) {
     const completeness = formatCoverageState(coverage);
     const status = coverage.status === 'unique_candidate'
       ? '<span class="coverage-chip unique">not seen elsewhere</span>'
-      : '<span class="coverage-chip seen">seen elsewhere</span>';
+      : coverage.status === 'verification_pending'
+        ? '<span class="coverage-chip pending">verification pending</span>'
+        : '<span class="coverage-chip seen">seen elsewhere</span>';
     const seen = [...(coverage.external_providers || []), ...(coverage.seen_groups || [])];
     const checks = (coverage.checked_sources || []).map(s => `<span class="gap-check ${s.status === 'found' ? 'found' : s.status === 'not_found' ? 'miss' : ''}">
       ${esc(s.provider)}: ${esc((s.status || 'not_checked').replace('_', ' '))}
