@@ -173,6 +173,7 @@ function renderCountryRank(rows) {
 function renderQuality(summary) {
   const el = document.getElementById('tm-quality');
   if (!el) return;
+  const popover = document.getElementById('tm-quality-popover');
   const considered = summary.inspected ?? summary.total_threats ?? summary.events ?? 0;
   const mapped = summary.events ?? 0;
   const unmapped = summary.unmapped ?? Math.max(0, considered - mapped);
@@ -190,13 +191,13 @@ function renderQuality(summary) {
       <div class="tm-quality-bar"><span class="tm-quality-fill" style="--w:${pct}%"></span></div>
     </div>`;
   }).join('');
-  const reasons = (summary.unmapped_reasons || []).length
-    ? `<div class="tm-quality-reasons">
-        <div class="tm-quality-reason-title">Why some threats are not on the map</div>
-        ${summary.unmapped_reasons.map(r => `<div class="tm-quality-reason"><span>${esc(r.reason)}</span><b>${r.count}</b></div>`).join('')}
-      </div>`
-    : '';
-  el.innerHTML = metrics + reasons;
+  el.innerHTML = metrics;
+  if (popover) {
+    popover.innerHTML = (summary.unmapped_reasons || []).length
+      ? `<span class="tm-quality-reason-title">Why some threats are not on the map</span>
+          ${summary.unmapped_reasons.map(r => `<span class="tm-quality-reason"><span>${esc(r.reason)}</span><b>${r.count}</b></span>`).join('')}`
+      : '<span class="tm-quality-reason-title">Everything in this window has enough map context.</span>';
+  }
 }
 
 function renderFeed(events) {
