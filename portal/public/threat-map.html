@@ -5,7 +5,7 @@
   <title>Radar — Threat Map</title>
   <link rel="stylesheet" href="/css/main.css">
 </head>
-<body>
+<body class="threat-map-shell">
 
 <nav class="navbar">
   <div class="navbar-brand">
@@ -32,8 +32,9 @@
   <section class="tm-stage">
     <div class="tm-header">
       <div>
+        <div class="tm-kicker">Radar observation map</div>
         <div class="tm-title">Live Threat Map</div>
-        <div class="tm-subtitle"><span id="tm-count">—</span> mapped observations in the selected window</div>
+        <div class="tm-subtitle"><span id="tm-count">—</span> observations mapped from ingested Radar data</div>
       </div>
       <div class="time-pills tm-window">
         <button class="time-pill active" data-days="1" onclick="setMapDays(1,this)">24h</button>
@@ -44,18 +45,15 @@
 
     <div class="tm-layout">
       <aside class="tm-left">
-        <div class="tm-panel">
-          <div class="tm-panel-title">Recent Activity</div>
-          <canvas id="tm-spark" width="260" height="92"></canvas>
-        </div>
         <div class="tm-panel tm-feed-panel">
-          <div class="tm-panel-title">Live Events</div>
+          <div class="tm-panel-title" id="tm-feed-title">Recent Radar Observations</div>
           <div id="tm-live-feed" class="tm-live-feed">Loading…</div>
         </div>
       </aside>
 
       <div class="tm-map-wrap">
         <canvas id="tm-map"></canvas>
+        <div class="tm-map-note" id="tm-map-note">Routes require actor origin plus target geography. Otherwise Radar shows target pulses only.</div>
         <div class="tm-legend">
           <span><i class="tm-dot malware"></i> Malware</span>
           <span><i class="tm-dot phishing"></i> Phishing</span>
@@ -65,6 +63,10 @@
       </div>
 
       <aside class="tm-right">
+        <div class="tm-panel">
+          <div class="tm-panel-title">Mapping Quality</div>
+          <div id="tm-quality" class="tm-quality">Loading…</div>
+        </div>
         <div class="tm-panel">
           <div class="tm-panel-title">Top Targeted Countries</div>
           <div id="tm-countries" class="tm-rank-list">Loading…</div>

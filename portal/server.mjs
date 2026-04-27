@@ -472,10 +472,13 @@ app.get('/api/threat-map', (req, res) => {
     LIMIT 160
   `).all(cutoff).map(parseThreat);
 
-  const events = rows.map((t, idx) => threatMapEvent(t, idx));
+  const events = rows.map(threatMapEvent).filter(e => e.target_country);
   const countBy = key => {
     const map = new Map();
-    for (const event of events) map.set(event[key], (map.get(event[key]) || 0) + 1);
+    for (const event of events) {
+      if (!event[key]) continue;
+      map.set(event[key], (map.get(event[key]) || 0) + 1);
+    }
     return [...map.entries()].map(([value, count]) => ({ [key]: value, count })).sort((a, b) => b.count - a.count).slice(0, 6);
   };
   const dailyMap = new Map();
@@ -492,6 +495,8 @@ app.get('/api/threat-map', (req, res) => {
       critical: rows.filter(t => t.severity === 'critical').length,
       high: rows.filter(t => t.severity === 'high').length,
       article_sourced: rows.filter(t => !isCommoditySource(t.source_name)).length,
+      routed: events.filter(e => e.source_country && e.target_country && e.source_country !== e.target_country).length,
+      targeted: events.filter(e => e.target_country).length,
     },
     events,
     top_countries: countBy('target_country').map(r => ({ country: r.target_country, count: r.count })),
@@ -1439,6 +1444,13 @@ function sectorIndustry(sectors = []) {
   return 'Enterprise';
 }
 
+function sectorDefaultCountry(sectors = []) {
+  if (sectors.includes('banking')) return 'Singapore';
+  if (sectors.includes('healthcare')) return 'United States';
+  if (sectors.includes('government')) return 'United Kingdom';
+  return null;
+}
+
 function mapKind(threatType = '') {
   if (['phishing', 'data_breach'].includes(threatType)) return 'Phishing';
   if (['vulnerability', 'zero_day', 'supply_chain'].includes(threatType)) return 'Exploit';
@@ -1446,18 +1458,28 @@ function mapKind(threatType = '') {
   return 'Intrusion';
 }
 
-function threatMapEvent(threat, idx = 0) {
+function threatMapEvent(threat) {
   const text = `${threat.title || ''}\n${threat.summary || ''}\n${(threat.geography || []).join(' ')}`;
   const actor = deriveActorsFromThreat(threat)[0];
+  const commoditySource = isCommoditySource(threat.source_name);
   const sourceCountry = actor?.origin_country && MAP_COUNTRIES[actor.origin_country]
     ? actor.origin_country
-    : inferCountryFromText(text) || ['Russia', 'China', 'Iran', 'North Korea', 'United States'][idx % 5];
-  const targetCountry = (threat.geography || []).find(g => MAP_COUNTRIES[g])
-    || ((threat.sectors || []).includes('banking') ? 'Singapore' : null)
-    || ((threat.sectors || []).includes('healthcare') ? 'United States' : null)
-    || ((threat.sectors || []).includes('government') ? 'United Kingdom' : null)
-    || ['India', 'Germany', 'Japan', 'Australia', 'Israel'][idx % 5];
+    : null;
+  const explicitGeoCountry = (threat.geography || []).find(g => MAP_COUNTRIES[g]);
+  const articleCountry = inferCountryFromText(text);
+  const targetCountry = explicitGeoCountry
+    || (articleCountry && articleCountry !== sourceCountry ? articleCountry : null)
+    || (!commoditySource ? sectorDefaultCountry(threat.sectors || []) : null);
   const kind = mapKind(threat.threat_type);
+  const locationBasis = sourceCountry && targetCountry && sourceCountry !== targetCountry
+    ? 'actor origin + target'
+    : explicitGeoCountry
+      ? 'explicit geography'
+      : articleCountry && articleCountry !== sourceCountry
+        ? 'article geography'
+        : targetCountry
+          ? 'sector proxy'
+          : 'unmapped';
 
   return {
     id: threat.id,
@@ -1468,9 +1490,10 @@ function threatMapEvent(threat, idx = 0) {
     time: threat.ingested_at,
     source_country: sourceCountry,
     target_country: targetCountry,
-    source: MAP_COUNTRIES[sourceCountry] || MAP_COUNTRIES['United States'],
-    target: MAP_COUNTRIES[targetCountry] || MAP_COUNTRIES['United Kingdom'],
+    source: sourceCountry ? MAP_COUNTRIES[sourceCountry] : null,
+    target: targetCountry ? MAP_COUNTRIES[targetCountry] : null,
     industry: sectorIndustry(threat.sectors || []),
+    location_basis: locationBasis,
     cve_count: threat.cve_count || 0,
     ioc_count: threat.ioc_count || 0,
     actor_count: threat.actor_count || 0,
